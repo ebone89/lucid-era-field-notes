@@ -2,7 +2,6 @@ package com.lucidera.investigations.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -19,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -59,12 +57,17 @@ import com.lucidera.investigations.data.EntityDraft
 import com.lucidera.investigations.data.EntityType
 import com.lucidera.investigations.data.LeadDraft
 import com.lucidera.investigations.data.LeadStatus
+import com.lucidera.investigations.data.export.CasePackageExporter
 import com.lucidera.investigations.data.export.MarkdownShareHelper
 import com.lucidera.investigations.data.export.ObsidianMarkdownExporter
 import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
+import com.lucidera.investigations.ui.components.DictationOutlinedTextField
 import com.lucidera.investigations.ui.components.LucidEraBrandHeader
+import com.lucidera.investigations.ui.components.appendDictation
+import com.lucidera.investigations.ui.components.createSpeechIntent
+import com.lucidera.investigations.ui.components.rememberSpeechToTextLauncher
 import com.lucidera.investigations.ui.viewmodel.CaseDetailViewModel
 import java.io.File
 import java.io.FileOutputStream
@@ -72,7 +75,6 @@ import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +92,7 @@ fun CaseDetailScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
+    var pendingPackageExport by remember { mutableStateOf<ExportPackage?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
 
@@ -125,6 +128,30 @@ fun CaseDetailScreen(
         runCatching {
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 output.write(export.contents.toByteArray())
+            } ?: error("Could not open export target.")
+        }.onSuccess {
+            Toast.makeText(context, "${export.label} exported.", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, it.message ?: "Export failed.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val packageExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val export = pendingPackageExport
+        pendingPackageExport = null
+        if (uri == null || export == null) {
+            return@rememberLauncherForActivityResult
+        }
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                CasePackageExporter.writeCasePackage(
+                    context = context,
+                    outputStream = output,
+                    markdownFileName = export.markdownFileName,
+                    markdown = export.markdown,
+                    attachments = export.attachments
+                )
             } ?: error("Could not open export target.")
         }.onSuccess {
             Toast.makeText(context, "${export.label} exported.", Toast.LENGTH_SHORT).show()
@@ -187,6 +214,21 @@ fun CaseDetailScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Export Case Package") },
+                                onClick = {
+                                    val fileName = CasePackageExporter.buildPackageFileName(caseItem)
+                                    pendingPackageExport = ExportPackage(
+                                        label = "Case package",
+                                        fileName = fileName,
+                                        markdownFileName = caseItem.masterNoteName,
+                                        markdown = markdown,
+                                        attachments = state.attachments
+                                    )
+                                    showOverflowMenu = false
+                                    packageExportLauncher.launch(fileName)
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Export Session Log") },
                                 onClick = {
                                     val fileName = ObsidianMarkdownExporter.buildSessionLogFileName(caseItem)
@@ -208,6 +250,19 @@ fun CaseDetailScreen(
                                         fileName = caseItem.masterNoteName,
                                         markdown = markdown,
                                         chooserTitle = "Share case note"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share Case Package") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    MarkdownShareHelper.shareCasePackage(
+                                        context = context,
+                                        fileName = caseItem.masterNoteName,
+                                        markdown = markdown,
+                                        attachments = state.attachments,
+                                        chooserTitle = "Share case package"
                                     )
                                 }
                             )
@@ -565,6 +620,8 @@ private fun AddLeadDialog(
     var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
         when (dictationTarget) {
+            DictationTarget.LEAD_URL -> sourceUrl = appendDictation(sourceUrl, result)
+            DictationTarget.LEAD_ARCHIVE_URL -> archiveUrl = appendDictation(archiveUrl, result)
             DictationTarget.LEAD_SUMMARY -> summary = appendDictation(summary, result)
             DictationTarget.LEAD_NAME -> sourceName = appendDictation(sourceName, result)
             else -> Unit
@@ -599,24 +656,42 @@ private fun AddLeadDialog(
         title = { Text("Add Lead") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = sourceName, onValueChange = { sourceName = it }, label = { Text("Source or lead name") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.LEAD_NAME
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate source")
-                }
-                OutlinedTextField(value = sourceUrl, onValueChange = { sourceUrl = it }, label = { Text("Live URL") })
-                OutlinedTextField(value = archiveUrl, onValueChange = { archiveUrl = it }, label = { Text("Archive URL") })
-                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why it matters") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.LEAD_SUMMARY
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate summary")
-                }
+                DictationOutlinedTextField(
+                    value = sourceName,
+                    onValueChange = { sourceName = it },
+                    label = "Source or lead name",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_NAME
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = sourceUrl,
+                    onValueChange = { sourceUrl = it },
+                    label = "Live URL",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_URL
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = archiveUrl,
+                    onValueChange = { archiveUrl = it },
+                    label = "Archive URL",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_ARCHIVE_URL
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = "Why it matters",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_SUMMARY
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
             }
         }
     )
@@ -636,6 +711,7 @@ private fun AddEntityDialog(
         when (dictationTarget) {
             DictationTarget.ENTITY_NAME -> name = appendDictation(name, result)
             DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, result)
+            DictationTarget.ENTITY_IDENTIFIER -> identifier = appendDictation(identifier, result)
             else -> Unit
         }
     }
@@ -668,23 +744,33 @@ private fun AddEntityDialog(
         title = { Text("Add Entity") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Entity name") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.ENTITY_NAME
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate name")
-                }
-                OutlinedTextField(value = identifier, onValueChange = { identifier = it }, label = { Text("Identifier") })
-                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why this entity matters") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.ENTITY_SUMMARY
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate summary")
-                }
+                DictationOutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = "Entity name",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_NAME
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = identifier,
+                    onValueChange = { identifier = it },
+                    label = "Identifier",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_IDENTIFIER
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = "Why this entity matters",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_SUMMARY
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
             }
         }
     )
@@ -716,15 +802,12 @@ private fun AddPhotoCaptionDialog(
         title = { Text("Add photo note") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                DictationOutlinedTextField(
                     value = caption,
                     onValueChange = { caption = it },
-                    label = { Text("Caption or note") }
+                    label = "Caption or note",
+                    onDictate = { speechLauncher.launch(createSpeechIntent()) }
                 )
-                TextButton(onClick = { speechLauncher.launch(createSpeechIntent()) }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate caption")
-                }
             }
         }
     )
@@ -734,33 +817,6 @@ private fun formatDate(timestamp: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd")
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(timestamp))
-
-@Composable
-private fun rememberSpeechToTextLauncher(
-    context: android.content.Context,
-    onResult: (String) -> Unit
-) = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-    if (result.resultCode == android.app.Activity.RESULT_OK) {
-        val spoken = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-        if (!spoken.isNullOrBlank()) {
-            onResult(spoken)
-        } else {
-            Toast.makeText(context, "No speech captured.", Toast.LENGTH_SHORT).show()
-        }
-    }
-}
-
-private fun createSpeechIntent(): Intent =
-    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
-    }
-
-private fun appendDictation(existing: String, incoming: String): String =
-    if (existing.isBlank()) incoming else "$existing $incoming"
 
 private fun createCaseImageFile(context: android.content.Context): File {
     val dir = File(context.filesDir, "case_images").apply { mkdirs() }
@@ -805,8 +861,11 @@ private data class PendingPhotoDraft(
 
 private enum class DictationTarget {
     LEAD_NAME,
+    LEAD_URL,
+    LEAD_ARCHIVE_URL,
     LEAD_SUMMARY,
     ENTITY_NAME,
+    ENTITY_IDENTIFIER,
     ENTITY_SUMMARY
 }
 
@@ -814,4 +873,12 @@ private data class ExportDocument(
     val label: String,
     val fileName: String,
     val contents: String
+)
+
+private data class ExportPackage(
+    val label: String,
+    val fileName: String,
+    val markdownFileName: String,
+    val markdown: String,
+    val attachments: List<CaseAttachmentEntity>
 )
