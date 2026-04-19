@@ -1,0 +1,29 @@
+# Gradle / build
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Local machine config
+local.properties
+
+# Signing material
+*.jks
+*.keystore
+my-release/
+
+# Generated app packages
+*.apk
+*.aab
+*.ap_
+*.zip
+app/release/
+app/debug/
+
+# OS noise
+Thumbs.db
+Desktop.ini
