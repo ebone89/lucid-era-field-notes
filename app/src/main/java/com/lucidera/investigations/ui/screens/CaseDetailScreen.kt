@@ -1,7 +1,11 @@
 package com.lucidera.investigations.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -9,12 +13,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,9 +44,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import com.lucidera.investigations.R
+import com.lucidera.investigations.data.AttachmentDraft
+import com.lucidera.investigations.data.AttachmentType
 import com.lucidera.investigations.data.ConfidenceLevel
 import com.lucidera.investigations.data.EntityDraft
 import com.lucidera.investigations.data.EntityType
@@ -46,13 +61,18 @@ import com.lucidera.investigations.data.LeadDraft
 import com.lucidera.investigations.data.LeadStatus
 import com.lucidera.investigations.data.export.MarkdownShareHelper
 import com.lucidera.investigations.data.export.ObsidianMarkdownExporter
+import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
 import com.lucidera.investigations.ui.components.LucidEraBrandHeader
 import com.lucidera.investigations.ui.viewmodel.CaseDetailViewModel
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +89,8 @@ fun CaseDetailScreen(
     var pendingExport by remember { mutableStateOf<ExportDocument?>(null) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
 
     if (state.case == null) {
@@ -78,18 +100,18 @@ fun CaseDetailScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Case not found.")
+            Text("This case is no longer available.")
         }
         return
     }
 
     val caseItem = state.case
         ?: return
-    val markdown = remember(caseItem, state.leads, state.entities) {
-        ObsidianMarkdownExporter.buildCaseMarkdown(caseItem, state.leads, state.entities)
+    val markdown = remember(caseItem, state.leads, state.entities, state.attachments) {
+        ObsidianMarkdownExporter.buildCaseMarkdown(caseItem, state.leads, state.entities, state.attachments)
     }
-    val sessionLogMarkdown = remember(caseItem, state.leads, state.entities) {
-        ObsidianMarkdownExporter.buildSessionLogMarkdown(caseItem, state.leads, state.entities)
+    val sessionLogMarkdown = remember(caseItem, state.leads, state.entities, state.attachments) {
+        ObsidianMarkdownExporter.buildSessionLogMarkdown(caseItem, state.leads, state.entities, state.attachments)
     }
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/markdown")
@@ -108,6 +130,24 @@ fun CaseDetailScreen(
             Toast.makeText(context, "${export.label} exported.", Toast.LENGTH_SHORT).show()
         }.onFailure {
             Toast.makeText(context, it.message ?: "Export failed.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val galleryPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            persistGalleryImage(context, uri)?.let { storedUri ->
+                pendingPhotoDraft = PendingPhotoDraft(uri = storedUri, attachmentType = AttachmentType.GALLERY)
+            } ?: Toast.makeText(context, "Could not store selected image.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val cameraCapture = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            cameraUri?.let { uri ->
+                pendingPhotoDraft = PendingPhotoDraft(uri = uri, attachmentType = AttachmentType.CAMERA)
+            }
         }
     }
     Scaffold(
@@ -206,7 +246,7 @@ fun CaseDetailScreen(
             item {
                 LucidEraBrandHeader(
                     title = caseItem.title,
-                    subtitle = "Keep the mobile record aligned with the master note, not separate from it.",
+                    subtitle = "Use the phone for field capture, then fold the verified material back into the case file.",
                     compact = true
                 )
             }
@@ -253,6 +293,42 @@ fun CaseDetailScreen(
                 }
             }
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val file = createCaseImageFile(context)
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            cameraUri = uri
+                            cameraCapture.launch(uri)
+                        }
+                    ) {
+                        Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
+                        Text(" Camera")
+                    }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            galleryPicker.launch(
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                        Text(" Gallery")
+                    }
+                }
+            }
+            item {
                 Text("Lead log", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             items(state.leads, key = { it.id }) { lead ->
@@ -289,6 +365,21 @@ fun CaseDetailScreen(
                         )
                     }
                 )
+            }
+            item {
+                Text("Attachments", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            if (state.attachments.isEmpty()) {
+                item {
+                    Text(
+                        "No photos or attachments logged for this case yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            items(state.attachments, key = { it.id }) { attachment ->
+                AttachmentCard(attachment)
             }
         }
     }
@@ -335,7 +426,25 @@ fun CaseDetailScreen(
             },
             title = { Text("Delete case?") },
             text = {
-                Text("This removes the case and its local leads and entities from the app.")
+                Text("This removes the case, its leads, its entities, and its saved attachment records from the app.")
+            }
+        )
+    }
+
+    if (pendingPhotoDraft != null) {
+        AddPhotoCaptionDialog(
+            onDismiss = { pendingPhotoDraft = null },
+            onSave = { caption ->
+                val pending = pendingPhotoDraft ?: return@AddPhotoCaptionDialog
+                viewModel.addAttachment(
+                    AttachmentDraft(
+                        uri = pending.uri.toString(),
+                        fileName = pending.fileName,
+                        caption = caption,
+                        attachmentType = pending.attachmentType
+                    )
+                )
+                pendingPhotoDraft = null
             }
         )
     }
@@ -414,6 +523,36 @@ private fun EntityCard(
 }
 
 @Composable
+private fun AttachmentCard(attachment: CaseAttachmentEntity) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AsyncImage(
+                model = attachment.uri,
+                contentDescription = attachment.caption.ifBlank { attachment.fileName },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                contentScale = ContentScale.Crop,
+                error = painterResource(id = R.drawable.lucid_era_logo),
+                placeholder = painterResource(id = R.drawable.lucid_era_logo)
+            )
+            Text(attachment.fileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            if (attachment.caption.isNotBlank()) {
+                Text(attachment.caption)
+            }
+            Text(
+                "Source: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun AddLeadDialog(
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
@@ -422,6 +561,15 @@ private fun AddLeadDialog(
     var sourceUrl by remember { mutableStateOf("") }
     var archiveUrl by remember { mutableStateOf("") }
     var summary by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
+    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
+        when (dictationTarget) {
+            DictationTarget.LEAD_SUMMARY -> summary = appendDictation(summary, result)
+            DictationTarget.LEAD_NAME -> sourceName = appendDictation(sourceName, result)
+            else -> Unit
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -452,9 +600,23 @@ private fun AddLeadDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = sourceName, onValueChange = { sourceName = it }, label = { Text("Source or lead name") })
+                TextButton(onClick = {
+                    dictationTarget = DictationTarget.LEAD_NAME
+                    speechLauncher.launch(createSpeechIntent())
+                }) {
+                    Icon(Icons.Outlined.Mic, contentDescription = null)
+                    Text(" Dictate source")
+                }
                 OutlinedTextField(value = sourceUrl, onValueChange = { sourceUrl = it }, label = { Text("Live URL") })
                 OutlinedTextField(value = archiveUrl, onValueChange = { archiveUrl = it }, label = { Text("Archive URL") })
                 OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why it matters") })
+                TextButton(onClick = {
+                    dictationTarget = DictationTarget.LEAD_SUMMARY
+                    speechLauncher.launch(createSpeechIntent())
+                }) {
+                    Icon(Icons.Outlined.Mic, contentDescription = null)
+                    Text(" Dictate summary")
+                }
             }
         }
     )
@@ -468,6 +630,15 @@ private fun AddEntityDialog(
     var name by remember { mutableStateOf("") }
     var summary by remember { mutableStateOf("") }
     var identifier by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var dictationTarget by remember { mutableStateOf(DictationTarget.ENTITY_SUMMARY) }
+    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
+        when (dictationTarget) {
+            DictationTarget.ENTITY_NAME -> name = appendDictation(name, result)
+            DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, result)
+            else -> Unit
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -498,8 +669,62 @@ private fun AddEntityDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Entity name") })
+                TextButton(onClick = {
+                    dictationTarget = DictationTarget.ENTITY_NAME
+                    speechLauncher.launch(createSpeechIntent())
+                }) {
+                    Icon(Icons.Outlined.Mic, contentDescription = null)
+                    Text(" Dictate name")
+                }
                 OutlinedTextField(value = identifier, onValueChange = { identifier = it }, label = { Text("Identifier") })
                 OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why this entity matters") })
+                TextButton(onClick = {
+                    dictationTarget = DictationTarget.ENTITY_SUMMARY
+                    speechLauncher.launch(createSpeechIntent())
+                }) {
+                    Icon(Icons.Outlined.Mic, contentDescription = null)
+                    Text(" Dictate summary")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun AddPhotoCaptionDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var caption by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
+        caption = appendDictation(caption, result)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onSave(caption) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        title = { Text("Add photo note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = { caption = it },
+                    label = { Text("Caption or note") }
+                )
+                TextButton(onClick = { speechLauncher.launch(createSpeechIntent()) }) {
+                    Icon(Icons.Outlined.Mic, contentDescription = null)
+                    Text(" Dictate caption")
+                }
             }
         }
     )
@@ -509,6 +734,81 @@ private fun formatDate(timestamp: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd")
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(timestamp))
+
+@Composable
+private fun rememberSpeechToTextLauncher(
+    context: android.content.Context,
+    onResult: (String) -> Unit
+) = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    if (result.resultCode == android.app.Activity.RESULT_OK) {
+        val spoken = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!spoken.isNullOrBlank()) {
+            onResult(spoken)
+        } else {
+            Toast.makeText(context, "No speech captured.", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+private fun createSpeechIntent(): Intent =
+    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
+    }
+
+private fun appendDictation(existing: String, incoming: String): String =
+    if (existing.isBlank()) incoming else "$existing $incoming"
+
+private fun createCaseImageFile(context: android.content.Context): File {
+    val dir = File(context.filesDir, "case_images").apply { mkdirs() }
+    return File(dir, "case_${System.currentTimeMillis()}.jpg")
+}
+
+private fun persistGalleryImage(
+    context: android.content.Context,
+    sourceUri: Uri
+): Uri? {
+    val extension = sourceUri
+        .lastPathSegment
+        ?.substringAfterLast('.', "")
+        ?.takeIf { it.isNotBlank() }
+        ?: "jpg"
+    val targetFile = File(
+        File(context.filesDir, "case_images").apply { mkdirs() },
+        "gallery_${System.currentTimeMillis()}.$extension"
+    )
+
+    return runCatching {
+        context.contentResolver.openInputStream(sourceUri).useToCopy(targetFile)
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", targetFile)
+    }.getOrNull()
+}
+
+private fun InputStream?.useToCopy(targetFile: File) {
+    val input = this ?: error("Could not open image stream.")
+    input.use { source ->
+        FileOutputStream(targetFile).use { output ->
+            source.copyTo(output)
+        }
+    }
+}
+
+private data class PendingPhotoDraft(
+    val uri: Uri,
+    val attachmentType: AttachmentType
+) {
+    val fileName: String = uri.lastPathSegment?.substringAfterLast('/') ?: "case_attachment.jpg"
+}
+
+private enum class DictationTarget {
+    LEAD_NAME,
+    LEAD_SUMMARY,
+    ENTITY_NAME,
+    ENTITY_SUMMARY
+}
 
 private data class ExportDocument(
     val label: String,

@@ -1,5 +1,6 @@
 package com.lucidera.investigations.data.export
 
+import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
@@ -15,7 +16,8 @@ object ObsidianMarkdownExporter {
     fun buildCaseMarkdown(
         caseItem: InvestigationCaseEntity,
         leads: List<LeadEntity>,
-        entities: List<EntityProfileEntity>
+        entities: List<EntityProfileEntity>,
+        attachments: List<CaseAttachmentEntity> = emptyList()
     ): String {
         val today = LocalDate.now().format(dateFormatter)
         val tags = buildList {
@@ -48,6 +50,14 @@ object ObsidianMarkdownExporter {
             }.joinToString("\n")
         }
 
+        val attachmentLines = if (attachments.isEmpty()) {
+            "- No attachments logged in the app for this case."
+        } else {
+            attachments.joinToString("\n") { attachment ->
+                "- ${attachment.fileName} (${attachment.attachmentType.name.lowercase()})${if (attachment.caption.isNotBlank()) ": ${attachment.caption}" else ""}  \n  Local URI: `${attachment.uri}`"
+            }
+        }
+
         return """
 ---
 Status: ${caseItem.status.name.lowercase().replaceFirstChar(Char::uppercase)}
@@ -71,10 +81,10 @@ ${caseItem.essentialQuestion}
 
 ## Scope
 **In bounds:**  
-[Fill in on desktop]
+[Add after source review]
 
 **Out of bounds:**  
-[Fill in on desktop]
+[Add after source review]
 
 **Primary subject:**  
 ${caseItem.primarySubject}
@@ -103,6 +113,10 @@ $entityLinks
 
 - [Add open threads here]
 
+## Attachments
+
+$attachmentLines
+
 ## Source Appendix
 | # | URL | Archive URL | Retrieved | Notes |
 |---|-----|-------------|-----------|-------|
@@ -120,21 +134,30 @@ ${buildEntityRelatedNotes(entities)}
     fun buildSessionLogMarkdown(
         caseItem: InvestigationCaseEntity,
         leads: List<LeadEntity>,
-        entities: List<EntityProfileEntity>
+        entities: List<EntityProfileEntity>,
+        attachments: List<CaseAttachmentEntity> = emptyList()
     ): String {
         val today = LocalDate.now().format(dateFormatter)
         val openLeadLines = if (leads.isEmpty()) {
-            "- No leads captured on mobile yet"
+            "- No leads logged in this session."
         } else {
             leads.joinToString("\n") { lead ->
                 "- ${lead.sourceName}: ${lead.summary}"
             }
         }
         val entityLines = if (entities.isEmpty()) {
-            "- No linked entities yet"
+            "- No linked entities logged in this session."
         } else {
             entities.joinToString("\n") { entity ->
                 "- ${entity.name} (${entity.entityType.name.lowercase()})"
+            }
+        }
+
+        val attachmentLines = if (attachments.isEmpty()) {
+            "- No photos or attachments logged in this session."
+        } else {
+            attachments.joinToString("\n") { attachment ->
+                "- ${attachment.fileName}: ${attachment.caption.ifBlank { "Caption still needed." }}"
             }
         }
 
@@ -153,27 +176,30 @@ Save-Path: ${caseItem.savePath}
 # Session Log: ${caseItem.caseCode} -- $today
 
 ## Session Goals
-- Capture mobile notes without drifting away from the master case file
+- Record field notes that can be reviewed and folded back into the case file
 
 ## Research Conducted
-- Reviewed current case summary on mobile
-- Added or updated leads and entities in the field app
+- Reviewed the active case summary
+- Logged leads, entities, or attachments in the field
 
 ## Leads Surfaced
 $openLeadLines
 
 ## Findings
-- Promote anything verified from this session into the master note on desktop
+- Move anything verified from this session into the case note after review
 
 ## Decisions Made
-- Keep the mobile record aligned with the Obsidian case file
-- Treat the app as a capture and export layer, not the canonical archive
+- Keep the phone record aligned with the Obsidian case file
+- Treat the app as a field log, not the final archive
 
 ## Entity Touchpoints
 $entityLines
 
+## Attachment Capture
+$attachmentLines
+
 ## Open Threads
-- Review exported notes in Obsidian and merge anything that belongs in the master file
+- Review exported notes and merge anything that belongs in the master file
 """.trimIndent()
     }
 
@@ -209,7 +235,7 @@ ${entity.summary}
 
 | Identifier Type | Value | Source | Verified? |
 |-----------------|-------|--------|-----------|
-| Internal ID | ${entity.identifier} | Mobile field app | ${if (entity.confidence == com.lucidera.investigations.data.ConfidenceLevel.VERIFIED) "Yes" else "No"} |
+| Internal ID | ${entity.identifier} | Field capture app | ${if (entity.confidence == com.lucidera.investigations.data.ConfidenceLevel.VERIFIED) "Yes" else "No"} |
 
 ## Associated Entities
 
@@ -223,13 +249,13 @@ ${entity.summary}
 
 | Date | Event | Source | Archived? |
 |------|-------|--------|-----------|
-| $today | Entity note exported from mobile app | Lucid Era Field Notes | No |
+| $today | Entity note exported from the field app | Lucid Era Field Notes | No |
 
 ## Source Appendix
 
 | # | URL | Archive URL | Retrieved | Notes |
 |---|-----|-------------|-----------|-------|
-| 1 |  |  | $today | Fill in on desktop |
+| 1 |  |  | $today | Add source details during desktop review |
 
 ## Related Notes
 

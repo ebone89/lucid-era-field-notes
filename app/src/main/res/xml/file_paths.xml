@@ -3,4 +3,7 @@
     <cache-path
         name="shared_markdown"
         path="shared/" />
+    <files-path
+        name="case_images"
+        path="case_images/" />
 </paths>

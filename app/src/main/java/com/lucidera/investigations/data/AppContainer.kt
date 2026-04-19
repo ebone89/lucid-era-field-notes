@@ -37,6 +37,7 @@ class AppContainer(context: Context) {
             caseDao = database.caseDao(),
             leadDao = database.leadDao(),
             entityDao = database.entityProfileDao(),
+            attachmentDao = database.attachmentDao(),
             waybackApi = waybackApi
         )
     }

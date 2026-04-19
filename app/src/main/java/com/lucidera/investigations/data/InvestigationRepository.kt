@@ -3,6 +3,8 @@ package com.lucidera.investigations.data
 import com.lucidera.investigations.data.local.CaseDao
 import com.lucidera.investigations.data.local.EntityProfileDao
 import com.lucidera.investigations.data.local.LeadDao
+import com.lucidera.investigations.data.local.AttachmentDao
+import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
@@ -14,6 +16,7 @@ class InvestigationRepository(
     private val caseDao: CaseDao,
     private val leadDao: LeadDao,
     private val entityDao: EntityProfileDao,
+    private val attachmentDao: AttachmentDao,
     private val waybackApi: WaybackApi
 ) {
 
@@ -149,6 +152,8 @@ class InvestigationRepository(
 
     fun observeEntities(caseId: Long): Flow<List<EntityProfileEntity>> = entityDao.observeEntitiesForCase(caseId)
 
+    fun observeAttachments(caseId: Long): Flow<List<CaseAttachmentEntity>> = attachmentDao.observeAttachmentsForCase(caseId)
+
     suspend fun addCase(draft: CaseDraft) {
         caseDao.insertCase(
             InvestigationCaseEntity(
@@ -202,6 +207,18 @@ class InvestigationRepository(
         )
     }
 
+    suspend fun addAttachment(caseId: Long, draft: AttachmentDraft) {
+        attachmentDao.insertAttachment(
+            CaseAttachmentEntity(
+                caseId = caseId,
+                uri = draft.uri,
+                fileName = draft.fileName,
+                caption = draft.caption,
+                attachmentType = draft.attachmentType
+            )
+        )
+    }
+
     suspend fun lookupArchive(url: String): WaybackLookupResult {
         val response = waybackApi.lookupAvailability(url)
         val closest = response.archivedSnapshots.closest
@@ -246,4 +263,11 @@ data class EntityDraft(
     val confidence: ConfidenceLevel,
     val summary: String,
     val identifier: String
+)
+
+data class AttachmentDraft(
+    val uri: String,
+    val fileName: String,
+    val caption: String,
+    val attachmentType: AttachmentType
 )

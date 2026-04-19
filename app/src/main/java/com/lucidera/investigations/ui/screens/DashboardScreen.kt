@@ -39,7 +39,7 @@ fun DashboardScreen(
         item {
             LucidEraBrandHeader(
                 title = "Lucid Era Field Notes",
-                subtitle = "A mobile working companion for the Obsidian vault: cases, leads, entities, and archive checks."
+                subtitle = "Field capture for the Obsidian vault: cases, leads, entities, archives, and evidence notes."
             )
         }
         item {

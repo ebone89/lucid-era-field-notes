@@ -39,6 +39,9 @@ class DashboardViewModelFactory(
     private val repository: InvestigationRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return DashboardViewModel(repository) as T
+        require(modelClass.isAssignableFrom(DashboardViewModel::class.java)) {
+            "Unknown ViewModel class: ${modelClass.name}"
+        }
+        return modelClass.cast(DashboardViewModel(repository))
     }
 }

@@ -1,6 +1,7 @@
 package com.lucidera.investigations.data.local
 
 import androidx.room.TypeConverter
+import com.lucidera.investigations.data.AttachmentType
 import com.lucidera.investigations.data.CaseStatus
 import com.lucidera.investigations.data.ConfidenceLevel
 import com.lucidera.investigations.data.EntityType
@@ -31,4 +32,10 @@ class Converters {
 
     @TypeConverter
     fun toConfidenceLevel(value: String): ConfidenceLevel = ConfidenceLevel.valueOf(value)
+
+    @TypeConverter
+    fun fromAttachmentType(value: AttachmentType): String = value.name
+
+    @TypeConverter
+    fun toAttachmentType(value: String): AttachmentType = AttachmentType.valueOf(value)
 }

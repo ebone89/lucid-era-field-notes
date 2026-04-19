@@ -41,6 +41,9 @@ class ArchiveViewModelFactory(
     private val repository: InvestigationRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return ArchiveViewModel(repository) as T
+        require(modelClass.isAssignableFrom(ArchiveViewModel::class.java)) {
+            "Unknown ViewModel class: ${modelClass.name}"
+        }
+        return modelClass.cast(ArchiveViewModel(repository))
     }
 }

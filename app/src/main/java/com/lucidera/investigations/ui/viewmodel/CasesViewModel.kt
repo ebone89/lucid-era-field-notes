@@ -33,6 +33,9 @@ class CasesViewModelFactory(
     private val repository: InvestigationRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return CasesViewModel(repository) as T
+        require(modelClass.isAssignableFrom(CasesViewModel::class.java)) {
+            "Unknown ViewModel class: ${modelClass.name}"
+        }
+        return modelClass.cast(CasesViewModel(repository))
     }
 }
