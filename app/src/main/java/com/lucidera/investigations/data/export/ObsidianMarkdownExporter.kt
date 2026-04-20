@@ -248,7 +248,7 @@ Save-Path: A:\Obsidian_Vaults\Main-Notes\03_Organizations\03_Lucid_Era_Group\031
 ${entity.summary}
 
 ## Known Aliases
-${entity.aliases.ifBlank { "None noted yet." }}
+${if (entity.aliases.isBlank()) "- None recorded" else entity.aliases.split(",").joinToString("\n") { "- ${it.trim()}" }}
 
 ## Known Identifiers
 
