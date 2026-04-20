@@ -12,8 +12,10 @@ import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -21,41 +23,93 @@ data class CaseDetailUiState(
     val case: InvestigationCaseEntity? = null,
     val leads: List<LeadEntity> = emptyList(),
     val entities: List<EntityProfileEntity> = emptyList(),
-    val attachments: List<CaseAttachmentEntity> = emptyList()
+    val attachments: List<CaseAttachmentEntity> = emptyList(),
+    val userMessage: String? = null
 )
 
 class CaseDetailViewModel(
     private val repository: InvestigationRepository,
     private val caseId: Long
 ) : ViewModel() {
+    private val messageState = MutableStateFlow<String?>(null)
+
     val uiState = combine(
         repository.observeCase(caseId),
         repository.observeLeads(caseId),
         repository.observeEntities(caseId),
-        repository.observeAttachments(caseId)
-    ) { case, leads, entities, attachments ->
-            CaseDetailUiState(case = case, leads = leads, entities = entities, attachments = attachments)
+        repository.observeAttachments(caseId),
+        messageState
+    ) { case, leads, entities, attachments, userMessage ->
+            CaseDetailUiState(
+                case = case,
+                leads = leads,
+                entities = entities,
+                attachments = attachments,
+                userMessage = userMessage
+            )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CaseDetailUiState())
 
     fun addLead(draft: LeadDraft) {
-        viewModelScope.launch { runCatching { repository.addLead(caseId, draft) } }
+        viewModelScope.launch {
+            runCatching { repository.addLead(caseId, draft) }
+                .onSuccess { messageState.value = "Source saved." }
+                .onFailure { messageState.value = it.message ?: "Could not save source." }
+        }
     }
 
     fun addEntity(draft: EntityDraft) {
-        viewModelScope.launch { runCatching { repository.addEntity(caseId, draft) } }
+        viewModelScope.launch {
+            runCatching { repository.addEntity(caseId, draft) }
+                .onSuccess { messageState.value = "Entity saved." }
+                .onFailure { messageState.value = it.message ?: "Could not save entity." }
+        }
     }
 
     fun addAttachment(draft: AttachmentDraft) {
-        viewModelScope.launch { runCatching { repository.addAttachment(caseId, draft) } }
+        viewModelScope.launch {
+            runCatching { repository.addAttachment(caseId, draft) }
+                .onSuccess { messageState.value = "Attachment saved." }
+                .onFailure { messageState.value = it.message ?: "Could not save attachment." }
+        }
     }
 
     fun updateLeadStatus(leadId: Long, status: LeadStatus) {
-        viewModelScope.launch { runCatching { repository.updateLeadStatus(leadId, status) } }
+        viewModelScope.launch {
+            runCatching { repository.updateLeadStatus(leadId, status) }
+                .onSuccess {
+                    val statusLabel = status.name.lowercase().replaceFirstChar(Char::uppercase)
+                    messageState.value = "Source marked $statusLabel."
+                }
+                .onFailure { messageState.value = it.message ?: "Could not update source." }
+        }
+    }
+
+    fun updateAttachmentCaption(attachmentId: Long, caption: String) {
+        viewModelScope.launch {
+            runCatching { repository.updateAttachmentCaption(attachmentId, caption) }
+                .onSuccess { messageState.value = "Attachment updated." }
+                .onFailure { messageState.value = it.message ?: "Could not update attachment." }
+        }
+    }
+
+    fun deleteAttachment(attachmentId: Long) {
+        viewModelScope.launch {
+            runCatching { repository.deleteAttachment(attachmentId) }
+                .onSuccess { messageState.value = "Attachment deleted." }
+                .onFailure { messageState.value = it.message ?: "Could not delete attachment." }
+        }
     }
 
     fun deleteCase() {
-        viewModelScope.launch { runCatching { repository.deleteCase(caseId) } }
+        viewModelScope.launch {
+            runCatching { repository.deleteCase(caseId) }
+                .onFailure { messageState.value = it.message ?: "Could not delete case." }
+        }
+    }
+
+    fun clearUserMessage() {
+        messageState.update { null }
     }
 }
 

@@ -15,7 +15,7 @@ import com.lucidera.investigations.data.local.entity.LeadEntity
 @Database(
     entities = [InvestigationCaseEntity::class, LeadEntity::class, EntityProfileEntity::class, CaseAttachmentEntity::class],
     version = 5,
-    exportSchema = true
+    exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class FieldbookDatabase : RoomDatabase() {

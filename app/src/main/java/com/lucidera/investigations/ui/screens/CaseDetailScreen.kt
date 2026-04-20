@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
@@ -33,8 +35,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,7 +100,17 @@ fun CaseDetailScreen(
     var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
     var pendingPackageExport by remember { mutableStateOf<ExportPackage?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var attachmentToEdit by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
+    var attachmentToDelete by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.userMessage) {
+        state.userMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUserMessage()
+        }
+    }
 
     if (state.case == null) {
         Column(
@@ -197,6 +212,7 @@ fun CaseDetailScreen(
         }
     }
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(caseItem.caseCode) },
@@ -453,7 +469,11 @@ fun CaseDetailScreen(
                 }
             }
             items(state.attachments, key = { it.id }) { attachment ->
-                AttachmentCard(attachment)
+                AttachmentCard(
+                    attachment = attachment,
+                    onEdit = { attachmentToEdit = attachment },
+                    onDelete = { attachmentToDelete = attachment }
+                )
             }
         }
     }
@@ -525,6 +545,41 @@ fun CaseDetailScreen(
                 )
                 pendingPhotoDraft = null
             }
+        )
+    }
+
+    val editingAttachment = attachmentToEdit
+    if (editingAttachment != null) {
+        EditAttachmentDialog(
+            attachment = editingAttachment,
+            onDismiss = { attachmentToEdit = null },
+            onSave = { caption ->
+                viewModel.updateAttachmentCaption(editingAttachment.id, caption)
+                attachmentToEdit = null
+            }
+        )
+    }
+
+    if (attachmentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { attachmentToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAttachment(attachmentToDelete?.id ?: return@TextButton)
+                        attachmentToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { attachmentToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete attachment?") },
+            text = { Text("This removes the attachment record from the app.") }
         )
     }
 }
@@ -602,7 +657,11 @@ private fun EntityCard(
 }
 
 @Composable
-private fun AttachmentCard(attachment: CaseAttachmentEntity) {
+private fun AttachmentCard(
+    attachment: CaseAttachmentEntity,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -645,6 +704,16 @@ private fun AttachmentCard(attachment: CaseAttachmentEntity) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = onEdit) {
+                    Icon(Icons.Outlined.Edit, contentDescription = null)
+                    Text(" Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Text(" Delete")
+                }
             }
         }
     }
@@ -856,6 +925,38 @@ private fun AddPhotoCaptionDialog(
     )
 }
 
+@Composable
+private fun EditAttachmentDialog(
+    attachment: CaseAttachmentEntity,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var caption by remember(attachment.id) { mutableStateOf(attachment.caption) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onSave(caption) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        title = { Text("Edit Attachment") },
+        text = {
+            OutlinedTextField(
+                value = caption,
+                onValueChange = { caption = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Caption or note") }
+            )
+        }
+    )
+}
+
 private fun formatDate(timestamp: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd")
         .withZone(ZoneId.systemDefault())
@@ -923,10 +1024,9 @@ private fun extractExifData(context: android.content.Context, uri: Uri): ExifDat
     return runCatching {
         context.contentResolver.openInputStream(uri)?.use { stream ->
             val exif = ExifInterface(stream)
-            val latLon = FloatArray(2)
-            val hasGps = exif.getLatLong(latLon)
-            val gpsLat = if (hasGps) latLon[0].toDouble() else null
-            val gpsLon = if (hasGps) latLon[1].toDouble() else null
+            val latLon = exif.latLong
+            val gpsLat = latLon?.getOrNull(0)?.toDouble()
+            val gpsLon = latLon?.getOrNull(1)?.toDouble()
             val dateTimeStr = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
                 ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
             val capturedAt = dateTimeStr?.let { parseExifDateTime(it) }

@@ -224,6 +224,14 @@ class InvestigationRepository(
         )
     }
 
+    suspend fun updateAttachmentCaption(attachmentId: Long, caption: String) {
+        attachmentDao.updateAttachmentCaption(attachmentId, caption)
+    }
+
+    suspend fun deleteAttachment(attachmentId: Long) {
+        attachmentDao.deleteAttachment(attachmentId)
+    }
+
     suspend fun lookupArchive(url: String): WaybackLookupResult {
         val response = waybackApi.lookupAvailability(url)
         val closest = response.archivedSnapshots.closest
