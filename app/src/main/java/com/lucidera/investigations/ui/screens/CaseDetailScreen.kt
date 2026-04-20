@@ -6,6 +6,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -697,7 +699,7 @@ private fun LeadCard(
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionChipRow {
                 TextButton(onClick = onVerify) {
                     Text("Mark Verified")
                 }
@@ -742,7 +744,7 @@ private fun EntityCard(
                 Text("Aliases: ${entity.aliases}", style = MaterialTheme.typography.bodySmall)
             }
             Text("Identifier: ${entity.identifier}", style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionChipRow {
                 TextButton(onClick = onExport) {
                     Text("Export Note")
                 }
@@ -809,7 +811,7 @@ private fun AttachmentCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionChipRow {
                 TextButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = null)
                     Text(" Edit")
@@ -820,6 +822,20 @@ private fun AttachmentCard(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActionChipRow(
+    content: @Composable () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        content()
     }
 }
 
