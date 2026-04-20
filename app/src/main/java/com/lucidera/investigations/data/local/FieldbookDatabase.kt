@@ -14,7 +14,7 @@ import com.lucidera.investigations.data.local.entity.LeadEntity
 
 @Database(
     entities = [InvestigationCaseEntity::class, LeadEntity::class, EntityProfileEntity::class, CaseAttachmentEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -58,6 +58,12 @@ abstract class FieldbookDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE case_attachments ADD COLUMN mimeType TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): FieldbookDatabase =
             INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -65,7 +71,7 @@ abstract class FieldbookDatabase : RoomDatabase() {
                     FieldbookDatabase::class.java,
                     "fieldbook.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -213,6 +213,7 @@ class InvestigationRepository(
                 caseId = caseId,
                 uri = draft.uri,
                 fileName = draft.fileName,
+                mimeType = draft.mimeType,
                 caption = draft.caption,
                 attachmentType = draft.attachmentType,
                 gpsLat = draft.gpsLat,
@@ -272,6 +273,7 @@ data class EntityDraft(
 data class AttachmentDraft(
     val uri: String,
     val fileName: String,
+    val mimeType: String,
     val caption: String,
     val attachmentType: AttachmentType,
     val gpsLat: Double? = null,

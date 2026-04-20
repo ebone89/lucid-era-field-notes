@@ -137,7 +137,7 @@ private fun AddCaseDialog(
     var essentialQuestion by remember { mutableStateOf("") }
     var primarySubject by remember { mutableStateOf("") }
     var classification by remember { mutableStateOf("Internal working document") }
-    var leadInvestigator by remember { mutableStateOf("Ethan Bradley") }
+    var leadInvestigator by remember { mutableStateOf("") }
     var summary by remember { mutableStateOf("") }
     var caseFolderName by remember { mutableStateOf("") }
     var masterNoteName by remember { mutableStateOf("") }

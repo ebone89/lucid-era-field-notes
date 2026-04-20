@@ -24,6 +24,7 @@ data class CaseAttachmentEntity(
     val caseId: Long,
     val uri: String,
     val fileName: String,
+    val mimeType: String,
     val caption: String,
     val attachmentType: AttachmentType,
     val createdAt: Long = System.currentTimeMillis(),

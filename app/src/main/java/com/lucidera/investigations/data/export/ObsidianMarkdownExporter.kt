@@ -55,7 +55,7 @@ object ObsidianMarkdownExporter {
         } else {
             attachments.joinToString("\n") { attachment ->
                 buildString {
-                    append("- ${attachment.fileName} (${attachment.attachmentType.name.lowercase()})${if (attachment.caption.isNotBlank()) ": ${attachment.caption}" else ""}  \n  Local URI: `${attachment.uri}`")
+                    append("- ${attachment.fileName} (${attachment.attachmentType.name.lowercase()})${if (attachment.caption.isNotBlank()) ": ${attachment.caption}" else ""}  \n  Type: `${attachment.mimeType}`  \n  Local URI: `${attachment.uri}`")
                     if (attachment.gpsLat != null && attachment.gpsLon != null) {
                         append("  \n  GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}")
                     }
@@ -166,7 +166,7 @@ ${buildEntityRelatedNotes(entities)}
         } else {
             attachments.joinToString("\n") { attachment ->
                 buildString {
-                    append("- ${attachment.fileName}: ${attachment.caption.ifBlank { "Caption still needed." }}")
+                    append("- ${attachment.fileName}: ${attachment.caption.ifBlank { "Caption still needed." }}  \n  Type: `${attachment.mimeType}`")
                     if (attachment.gpsLat != null && attachment.gpsLon != null) {
                         append("  \n  GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}")
                     }

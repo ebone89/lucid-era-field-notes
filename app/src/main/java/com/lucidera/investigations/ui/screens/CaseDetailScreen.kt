@@ -169,6 +169,7 @@ fun CaseDetailScreen(
                 pendingPhotoDraft = PendingPhotoDraft(
                     uri = storedUri,
                     attachmentType = AttachmentType.GALLERY,
+                    mimeType = resolveMimeType(context, uri) ?: "image/*",
                     gpsLat = exif.gpsLat,
                     gpsLon = exif.gpsLon,
                     capturedAt = exif.capturedAt,
@@ -186,6 +187,7 @@ fun CaseDetailScreen(
                 pendingPhotoDraft = PendingPhotoDraft(
                     uri = uri,
                     attachmentType = AttachmentType.CAMERA,
+                    mimeType = "image/jpeg",
                     gpsLat = exif.gpsLat,
                     gpsLon = exif.gpsLon,
                     capturedAt = exif.capturedAt,
@@ -512,6 +514,7 @@ fun CaseDetailScreen(
                     AttachmentDraft(
                         uri = pending.uri.toString(),
                         fileName = pending.fileName,
+                        mimeType = pending.mimeType,
                         caption = caption,
                         attachmentType = pending.attachmentType,
                         gpsLat = pending.gpsLat,
@@ -621,6 +624,11 @@ private fun AttachmentCard(attachment: CaseAttachmentEntity) {
             }
             Text(
                 "Added from: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "File type: ${attachment.mimeType}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -895,6 +903,7 @@ private fun InputStream?.useToCopy(targetFile: File) {
 private data class PendingPhotoDraft(
     val uri: Uri,
     val attachmentType: AttachmentType,
+    val mimeType: String,
     val gpsLat: Double? = null,
     val gpsLon: Double? = null,
     val capturedAt: Long? = null,
@@ -926,6 +935,11 @@ private fun extractExifData(context: android.content.Context, uri: Uri): ExifDat
         } ?: ExifData(null, null, null, null)
     }.getOrDefault(ExifData(null, null, null, null))
 }
+
+private fun resolveMimeType(
+    context: android.content.Context,
+    uri: Uri
+): String? = context.contentResolver.getType(uri)
 
 private fun parseExifDateTime(dateTimeStr: String): Long? =
     runCatching {
