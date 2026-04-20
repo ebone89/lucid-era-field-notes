@@ -14,6 +14,9 @@ interface LeadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLead(leadEntity: LeadEntity): Long
 
+    @Query("DELETE FROM leads WHERE id = :leadId")
+    suspend fun deleteLead(leadId: Long)
+
     @Query("UPDATE leads SET status = :status WHERE id = :leadId")
     suspend fun updateLeadStatus(leadId: Long, status: LeadStatus)
 

@@ -186,6 +186,22 @@ class InvestigationRepository(
         )
     }
 
+    suspend fun updateLead(lead: LeadEntity, draft: LeadDraft) {
+        leadDao.insertLead(
+            lead.copy(
+                sourceName = draft.sourceName,
+                sourceUrl = draft.sourceUrl,
+                archiveUrl = draft.archiveUrl,
+                summary = draft.summary,
+                status = draft.status
+            )
+        )
+    }
+
+    suspend fun deleteLead(leadId: Long) {
+        leadDao.deleteLead(leadId)
+    }
+
     suspend fun deleteCase(caseId: Long) {
         caseDao.deleteCase(caseId)
     }
@@ -205,6 +221,22 @@ class InvestigationRepository(
                 identifier = draft.identifier
             )
         )
+    }
+
+    suspend fun updateEntity(entity: EntityProfileEntity, draft: EntityDraft) {
+        entityDao.insertEntity(
+            entity.copy(
+                name = draft.name,
+                entityType = draft.entityType,
+                confidence = draft.confidence,
+                summary = draft.summary,
+                identifier = draft.identifier
+            )
+        )
+    }
+
+    suspend fun deleteEntity(entityId: Long) {
+        entityDao.deleteEntity(entityId)
     }
 
     suspend fun addAttachment(caseId: Long, draft: AttachmentDraft) {

@@ -100,6 +100,10 @@ fun CaseDetailScreen(
     var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
     var pendingPackageExport by remember { mutableStateOf<ExportPackage?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var leadToEdit by remember { mutableStateOf<LeadEntity?>(null) }
+    var leadToDelete by remember { mutableStateOf<LeadEntity?>(null) }
+    var entityToEdit by remember { mutableStateOf<EntityProfileEntity?>(null) }
+    var entityToDelete by remember { mutableStateOf<EntityProfileEntity?>(null) }
     var attachmentToEdit by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     var attachmentToDelete by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     val context = LocalContext.current
@@ -425,7 +429,9 @@ fun CaseDetailScreen(
                 LeadCard(
                     lead = lead,
                     onVerify = { viewModel.updateLeadStatus(lead.id, LeadStatus.VERIFIED) },
-                    onArchive = { viewModel.updateLeadStatus(lead.id, LeadStatus.ARCHIVED) }
+                    onArchive = { viewModel.updateLeadStatus(lead.id, LeadStatus.ARCHIVED) },
+                    onEdit = { leadToEdit = lead },
+                    onDelete = { leadToDelete = lead }
                 )
             }
             item {
@@ -453,7 +459,9 @@ fun CaseDetailScreen(
                             markdown = entityMarkdown,
                             chooserTitle = "Share entity note"
                         )
-                    }
+                    },
+                    onEdit = { entityToEdit = entity },
+                    onDelete = { entityToDelete = entity }
                 )
             }
             item {
@@ -481,6 +489,7 @@ fun CaseDetailScreen(
     if (showLeadDialog) {
         AddLeadDialog(
             onDismiss = { showLeadDialog = false },
+            title = "Add Source",
             onSave = {
                 viewModel.addLead(it)
                 showLeadDialog = false
@@ -491,10 +500,83 @@ fun CaseDetailScreen(
     if (showEntityDialog) {
         AddEntityDialog(
             onDismiss = { showEntityDialog = false },
+            title = "Add Person or Organization",
             onSave = {
                 viewModel.addEntity(it)
                 showEntityDialog = false
             }
+        )
+    }
+
+    val editingLead = leadToEdit
+    if (editingLead != null) {
+        AddLeadDialog(
+            initialLead = editingLead,
+            title = "Edit Source",
+            onDismiss = { leadToEdit = null },
+            onSave = {
+                viewModel.updateLead(editingLead, it)
+                leadToEdit = null
+            }
+        )
+    }
+
+    if (leadToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { leadToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteLead(leadToDelete?.id ?: return@TextButton)
+                        leadToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { leadToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete source?") },
+            text = { Text("This removes the source from the case.") }
+        )
+    }
+
+    val editingEntity = entityToEdit
+    if (editingEntity != null) {
+        AddEntityDialog(
+            initialEntity = editingEntity,
+            title = "Edit Person or Organization",
+            onDismiss = { entityToEdit = null },
+            onSave = {
+                viewModel.updateEntity(editingEntity, it)
+                entityToEdit = null
+            }
+        )
+    }
+
+    if (entityToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { entityToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteEntity(entityToDelete?.id ?: return@TextButton)
+                        entityToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entityToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete entity?") },
+            text = { Text("This removes the entity from the case.") }
         )
     }
 
@@ -588,7 +670,9 @@ fun CaseDetailScreen(
 private fun LeadCard(
     lead: LeadEntity,
     onVerify: () -> Unit,
-    onArchive: () -> Unit
+    onArchive: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card {
         Column(
@@ -617,6 +701,12 @@ private fun LeadCard(
                 TextButton(onClick = onArchive) {
                     Text("Archive")
                 }
+                TextButton(onClick = onEdit) {
+                    Text("Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Text("Delete")
+                }
             }
         }
     }
@@ -626,7 +716,9 @@ private fun LeadCard(
 private fun EntityCard(
     entity: EntityProfileEntity,
     onExport: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card {
         Column(
@@ -650,6 +742,12 @@ private fun EntityCard(
                 }
                 TextButton(onClick = onShare) {
                     Text("Share Note")
+                }
+                TextButton(onClick = onEdit) {
+                    Text("Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Text("Delete")
                 }
             }
         }
@@ -721,13 +819,15 @@ private fun AttachmentCard(
 
 @Composable
 private fun AddLeadDialog(
+    initialLead: LeadEntity? = null,
+    title: String,
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
 ) {
-    var sourceName by remember { mutableStateOf("") }
-    var sourceUrl by remember { mutableStateOf("") }
-    var archiveUrl by remember { mutableStateOf("") }
-    var summary by remember { mutableStateOf("") }
+    var sourceName by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceName.orEmpty()) }
+    var sourceUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceUrl.orEmpty()) }
+    var archiveUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl.orEmpty()) }
+    var summary by remember(initialLead?.id) { mutableStateOf(initialLead?.summary.orEmpty()) }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
@@ -765,7 +865,7 @@ private fun AddLeadDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Source") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DictationOutlinedTextField(
@@ -811,12 +911,14 @@ private fun AddLeadDialog(
 
 @Composable
 private fun AddEntityDialog(
+    initialEntity: EntityProfileEntity? = null,
+    title: String,
     onDismiss: () -> Unit,
     onSave: (EntityDraft) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var summary by remember { mutableStateOf("") }
-    var identifier by remember { mutableStateOf("") }
+    var name by remember(initialEntity?.id) { mutableStateOf(initialEntity?.name.orEmpty()) }
+    var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
+    var identifier by remember(initialEntity?.id) { mutableStateOf(initialEntity?.identifier.orEmpty()) }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.ENTITY_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
@@ -853,7 +955,7 @@ private fun AddEntityDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Person or Organization") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DictationOutlinedTextField(

@@ -58,11 +58,43 @@ class CaseDetailViewModel(
         }
     }
 
+    fun updateLead(lead: LeadEntity, draft: LeadDraft) {
+        viewModelScope.launch {
+            runCatching { repository.updateLead(lead, draft) }
+                .onSuccess { messageState.value = "Source updated." }
+                .onFailure { messageState.value = it.message ?: "Could not update source." }
+        }
+    }
+
+    fun deleteLead(leadId: Long) {
+        viewModelScope.launch {
+            runCatching { repository.deleteLead(leadId) }
+                .onSuccess { messageState.value = "Source deleted." }
+                .onFailure { messageState.value = it.message ?: "Could not delete source." }
+        }
+    }
+
     fun addEntity(draft: EntityDraft) {
         viewModelScope.launch {
             runCatching { repository.addEntity(caseId, draft) }
                 .onSuccess { messageState.value = "Entity saved." }
                 .onFailure { messageState.value = it.message ?: "Could not save entity." }
+        }
+    }
+
+    fun updateEntity(entity: EntityProfileEntity, draft: EntityDraft) {
+        viewModelScope.launch {
+            runCatching { repository.updateEntity(entity, draft) }
+                .onSuccess { messageState.value = "Entity updated." }
+                .onFailure { messageState.value = it.message ?: "Could not update entity." }
+        }
+    }
+
+    fun deleteEntity(entityId: Long) {
+        viewModelScope.launch {
+            runCatching { repository.deleteEntity(entityId) }
+                .onSuccess { messageState.value = "Entity deleted." }
+                .onFailure { messageState.value = it.message ?: "Could not delete entity." }
         }
     }
 
