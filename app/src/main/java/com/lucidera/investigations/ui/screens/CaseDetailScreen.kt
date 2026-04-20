@@ -685,6 +685,9 @@ private fun LeadCard(
             if (lead.archiveUrl.isNotBlank()) {
                 Text("Archive: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
             }
+            if (lead.tags.isNotBlank()) {
+                Text("Tags: ${lead.tags}", style = MaterialTheme.typography.bodySmall)
+            }
             Text("Saved: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(
                 "Status: ${lead.status.name.lowercase().replaceFirstChar(Char::uppercase)}",
@@ -735,6 +738,9 @@ private fun EntityCard(
                 }
             )
             Text(entity.summary)
+            if (entity.aliases.isNotBlank()) {
+                Text("Aliases: ${entity.aliases}", style = MaterialTheme.typography.bodySmall)
+            }
             Text("Identifier: ${entity.identifier}", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(onClick = onExport) {
@@ -827,6 +833,7 @@ private fun AddLeadDialog(
     var sourceName by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceName.orEmpty()) }
     var sourceUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceUrl.orEmpty()) }
     var archiveUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl.orEmpty()) }
+    var tags by remember(initialLead?.id) { mutableStateOf(initialLead?.tags.orEmpty()) }
     var summary by remember(initialLead?.id) { mutableStateOf(initialLead?.summary.orEmpty()) }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
@@ -850,6 +857,7 @@ private fun AddLeadDialog(
                             sourceName = sourceName,
                             sourceUrl = sourceUrl,
                             archiveUrl = archiveUrl,
+                            tags = tags,
                             summary = summary,
                             status = LeadStatus.OPEN
                         )
@@ -904,6 +912,11 @@ private fun AddLeadDialog(
                         speechLauncher.launch(createSpeechIntent())
                     }
                 )
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags") }
+                )
             }
         }
     )
@@ -917,6 +930,7 @@ private fun AddEntityDialog(
     onSave: (EntityDraft) -> Unit
 ) {
     var name by remember(initialEntity?.id) { mutableStateOf(initialEntity?.name.orEmpty()) }
+    var aliases by remember(initialEntity?.id) { mutableStateOf(initialEntity?.aliases.orEmpty()) }
     var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
     var identifier by remember(initialEntity?.id) { mutableStateOf(initialEntity?.identifier.orEmpty()) }
     val context = LocalContext.current
@@ -940,6 +954,7 @@ private fun AddEntityDialog(
                             name = name,
                             entityType = EntityType.ORGANIZATION,
                             confidence = ConfidenceLevel.PROBABLE,
+                            aliases = aliases,
                             summary = summary,
                             identifier = identifier
                         )
@@ -975,6 +990,11 @@ private fun AddEntityDialog(
                         dictationTarget = DictationTarget.ENTITY_IDENTIFIER
                         speechLauncher.launch(createSpeechIntent())
                     }
+                )
+                OutlinedTextField(
+                    value = aliases,
+                    onValueChange = { aliases = it },
+                    label = { Text("Aliases") }
                 )
                 DictationOutlinedTextField(
                     value = summary,

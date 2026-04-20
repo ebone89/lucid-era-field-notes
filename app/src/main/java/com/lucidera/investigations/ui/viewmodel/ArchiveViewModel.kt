@@ -84,6 +84,7 @@ class ArchiveViewModel(
                         sourceName = sourceName,
                         sourceUrl = sourceUrl,
                         archiveUrl = archiveUrl,
+                        tags = "archive",
                         summary = summary,
                         status = LeadStatus.OPEN
                     )

@@ -25,6 +25,7 @@ data class LeadEntity(
     val sourceName: String,
     val sourceUrl: String,
     val archiveUrl: String,
+    val tags: String = "",
     val summary: String,
     val status: LeadStatus,
     val collectedAt: Long = System.currentTimeMillis()

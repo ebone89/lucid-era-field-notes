@@ -53,6 +53,7 @@ class InvestigationRepository(
                 sourceName = "Sunbiz",
                 sourceUrl = "https://search.sunbiz.org/",
                 archiveUrl = "",
+                tags = "corporate-records, officers",
                 summary = "Check officer overlap between contractors, donors, and related entities.",
                 status = LeadStatus.OPEN
             )
@@ -64,6 +65,7 @@ class InvestigationRepository(
                 name = "Palatka Utilities",
                 entityType = EntityType.ORGANIZATION,
                 confidence = ConfidenceLevel.PROBABLE,
+                aliases = "",
                 summary = "Initial subject organization for mapping procurement and governance relationships.",
                 identifier = "ORG-PALATKA-UTIL"
             )
@@ -92,6 +94,7 @@ class InvestigationRepository(
                 sourceName = "Request log",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "records-request, timeline",
                 summary = "Track request dates, agency responses, and appeal deadlines in one place.",
                 status = LeadStatus.OPEN
             )
@@ -120,6 +123,7 @@ class InvestigationRepository(
                 sourceName = "Parcel table",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "parcel, land-records",
                 summary = "Use the parcel list as the search key for deeds, tax rolls, easements, agendas, and rezoning notices.",
                 status = LeadStatus.OPEN
             )
@@ -130,6 +134,7 @@ class InvestigationRepository(
                 sourceName = "Power corridor claim",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "power, infrastructure",
                 summary = "Separate corridor adjacency from actual deliverability, price, and upgrade responsibility.",
                 status = LeadStatus.OPEN
             )
@@ -140,6 +145,7 @@ class InvestigationRepository(
                 name = "Rayonier / Raydient",
                 entityType = EntityType.COMPANY,
                 confidence = ConfidenceLevel.PROBABLE,
+                aliases = "Raydient",
                 summary = "Seller-side entity posture for the Gilbert Road site. Corporate role is strong; some corporate-history claims still need primary verification.",
                 identifier = "ENT-RAYONIER-COMPANY"
             )
@@ -180,6 +186,7 @@ class InvestigationRepository(
                 sourceName = draft.sourceName,
                 sourceUrl = draft.sourceUrl,
                 archiveUrl = draft.archiveUrl,
+                tags = draft.tags,
                 summary = draft.summary,
                 status = draft.status
             )
@@ -192,6 +199,7 @@ class InvestigationRepository(
                 sourceName = draft.sourceName,
                 sourceUrl = draft.sourceUrl,
                 archiveUrl = draft.archiveUrl,
+                tags = draft.tags,
                 summary = draft.summary,
                 status = draft.status
             )
@@ -217,6 +225,7 @@ class InvestigationRepository(
                 name = draft.name,
                 entityType = draft.entityType,
                 confidence = draft.confidence,
+                aliases = draft.aliases,
                 summary = draft.summary,
                 identifier = draft.identifier
             )
@@ -229,6 +238,7 @@ class InvestigationRepository(
                 name = draft.name,
                 entityType = draft.entityType,
                 confidence = draft.confidence,
+                aliases = draft.aliases,
                 summary = draft.summary,
                 identifier = draft.identifier
             )
@@ -298,6 +308,7 @@ data class LeadDraft(
     val sourceName: String,
     val sourceUrl: String,
     val archiveUrl: String,
+    val tags: String,
     val summary: String,
     val status: LeadStatus = LeadStatus.OPEN
 )
@@ -306,6 +317,7 @@ data class EntityDraft(
     val name: String,
     val entityType: EntityType,
     val confidence: ConfidenceLevel,
+    val aliases: String,
     val summary: String,
     val identifier: String
 )

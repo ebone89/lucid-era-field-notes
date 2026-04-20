@@ -27,10 +27,10 @@ object ObsidianMarkdownExporter {
         }.joinToString("\n") { "  - $it" }
 
         val leadRows = if (leads.isEmpty()) {
-            "| | | | | |"
+            "| | | | | | |"
         } else {
             leads.joinToString("\n") { lead ->
-                "| ${formatDate(lead.collectedAt)} | ${escapePipes(lead.sourceName)} | ${escapePipes(lead.summary)} | ${escapePipes(lead.archiveUrl)} | ${lead.status.name} |"
+                "| ${formatDate(lead.collectedAt)} | ${escapePipes(lead.sourceName)} | ${escapePipes(lead.summary)} | ${escapePipes(lead.tags)} | ${escapePipes(lead.archiveUrl)} | ${lead.status.name} |"
             }
         }
 
@@ -105,8 +105,8 @@ ${caseItem.publicationThreshold}
 ${caseItem.summary}
 
 ## Lead Log
-| Date | Source | Summary | Archive URL | Status |
-|------|--------|---------|-------------|--------|
+| Date | Source | Summary | Tags | Archive URL | Status |
+|------|--------|---------|------|-------------|--------|
 $leadRows
 
 ## Entity Map
@@ -246,6 +246,9 @@ Save-Path: A:\Obsidian_Vaults\Main-Notes\03_Organizations\03_Lucid_Era_Group\031
 
 ## Summary
 ${entity.summary}
+
+## Known Aliases
+${entity.aliases.ifBlank { "None noted yet." }}
 
 ## Known Identifiers
 
