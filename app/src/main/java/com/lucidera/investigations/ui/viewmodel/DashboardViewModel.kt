@@ -82,7 +82,6 @@ class DashboardViewModelFactory(
         require(modelClass.isAssignableFrom(DashboardViewModel::class.java)) {
             "Unknown ViewModel class: ${modelClass.name}"
         }
-        @Suppress("UNCHECKED_CAST")
-        return DashboardViewModel(repository) as T
+        return modelClass.cast(DashboardViewModel(repository))
     }
 }
