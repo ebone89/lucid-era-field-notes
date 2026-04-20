@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -342,7 +344,7 @@ fun CaseDetailScreen(
             item {
                 LucidEraBrandHeader(
                     title = caseItem.title,
-                    subtitle = "Capture what you find here, then sort it into the case once the picture is clearer.",
+                    subtitle = "Log sources, entities, and field photos. Export to the vault when the session wraps.",
                     compact = true
                 )
             }
@@ -407,7 +409,8 @@ fun CaseDetailScreen(
                         }
                     ) {
                         Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
-                        Text(" Camera")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Camera")
                     }
                     Button(
                         modifier = Modifier.weight(1f),
@@ -420,12 +423,13 @@ fun CaseDetailScreen(
                         }
                     ) {
                         Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                        Text(" Gallery")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Gallery")
                     }
                 }
             }
             item {
-                Text("Sources and leads", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sources and Leads", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             items(state.leads, key = { it.id }) { lead ->
                 LeadCard(
@@ -437,7 +441,7 @@ fun CaseDetailScreen(
                 )
             }
             item {
-                Text("People and organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("People and Organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             items(state.entities, key = { it.id }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
@@ -683,7 +687,9 @@ private fun LeadCard(
         ) {
             Text(lead.sourceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(lead.summary)
-            Text("Source: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
+            if (lead.sourceUrl.isNotBlank()) {
+                Text("Source: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
+            }
             if (lead.archiveUrl.isNotBlank()) {
                 Text("Archive: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
             }
@@ -788,15 +794,17 @@ private fun AttachmentCard(
                 Text(attachment.caption)
             }
             Text(
-                "Added from: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                "Source: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                "File type: ${attachment.mimeType}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (attachment.mimeType.isNotBlank()) {
+                Text(
+                    "Type: ${attachment.mimeType}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (attachment.gpsLat != null && attachment.gpsLon != null) {
                 Text(
                     "GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}",
@@ -946,6 +954,12 @@ private fun AddEntityDialog(
     onSave: (EntityDraft) -> Unit
 ) {
     var name by remember(initialEntity?.id) { mutableStateOf(initialEntity?.name.orEmpty()) }
+    var entityType by remember(initialEntity?.id) {
+        mutableStateOf(initialEntity?.entityType ?: EntityType.ORGANIZATION)
+    }
+    var confidence by remember(initialEntity?.id) {
+        mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.PROBABLE)
+    }
     var aliases by remember(initialEntity?.id) { mutableStateOf(initialEntity?.aliases.orEmpty()) }
     var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
     var identifier by remember(initialEntity?.id) { mutableStateOf(initialEntity?.identifier.orEmpty()) }
@@ -968,8 +982,8 @@ private fun AddEntityDialog(
                     onSave(
                         EntityDraft(
                             name = name,
-                            entityType = EntityType.ORGANIZATION,
-                            confidence = ConfidenceLevel.PROBABLE,
+                            entityType = entityType,
+                            confidence = confidence,
                             aliases = aliases,
                             summary = summary,
                             identifier = identifier
@@ -992,12 +1006,40 @@ private fun AddEntityDialog(
                 DictationOutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = "Entity name",
+                    label = "Name",
                     onDictate = {
                         dictationTarget = DictationTarget.ENTITY_NAME
                         speechLauncher.launch(createSpeechIntent())
                     }
                 )
+                ActionChipRow {
+                    EntityType.entries.forEach { type ->
+                        TextButton(onClick = { entityType = type }) {
+                            Text(
+                                text = type.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (entityType == type) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                }
+                ActionChipRow {
+                    ConfidenceLevel.entries.forEach { level ->
+                        TextButton(onClick = { confidence = level }) {
+                            Text(
+                                text = level.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (confidence == level) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                }
                 DictationOutlinedTextField(
                     value = identifier,
                     onValueChange = { identifier = it },

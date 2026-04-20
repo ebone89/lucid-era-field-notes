@@ -80,11 +80,11 @@ fun ArchiveLookupScreen(
         ) {
             LucidEraBrandHeader(
                 title = "Archive Lookup",
-                subtitle = "Find a saved copy of the page, then send it straight into a case.",
+                subtitle = "Check for a Wayback Machine snapshot and attach it directly to a case.",
                 compact = true
             )
             Text(
-                "Paste the live URL here. If a snapshot exists, you can save it into a case as a source.",
+                "Paste a URL to check for a Wayback Machine snapshot. Save the result to any open case.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -67,7 +67,7 @@ fun DashboardScreen(
             item {
                 LucidEraBrandHeader(
                     title = "Lucid Era Field Notes",
-                    subtitle = "A quick place to track cases, save sources, and keep your notes moving."
+                    subtitle = "Active cases, lead counts, and recent activity at a glance."
                 )
             }
             item {
@@ -125,7 +125,7 @@ fun DashboardScreen(
             }
             item {
                 Text(
-                    text = "Recent cases",
+                    text = "Recent Cases",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )

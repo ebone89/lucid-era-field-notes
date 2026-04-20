@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
@@ -22,13 +23,17 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +58,7 @@ fun CasesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         importCaseFromMarkdown(context, uri)?.let { draft ->
@@ -61,30 +67,55 @@ fun CasesScreen(
         } ?: Toast.makeText(context, "Could not import that case note.", Toast.LENGTH_LONG).show()
     }
 
-    Column(
+    LaunchedEffect(state.userMessage) {
+        state.userMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUserMessage()
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        LucidEraBrandHeader(
-            title = "Investigation Cases",
-            subtitle = "Start a case, keep the question clear, and build it out as the reporting takes shape.",
-            compact = true
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            LucidEraBrandHeader(
+                title = "Investigation Cases",
+                subtitle = "All open investigations. Tap a case to add sources, entities, or field photos.",
+                compact = true
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { showDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Add Case")
+                }
+                Button(
+                    onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Import Note")
+                }
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(state.cases, key = { it.id }) { caseItem ->
+                    CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
+                }
+            }
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { showDialog = true }) {
-                Text("Add Case")
-            }
-            Button(onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) }) {
-                Text("Import Case Note")
-            }
-        }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(state.cases, key = { it.id }) { caseItem ->
-                CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
-            }
-        }
     }
 
     if (showDialog) {
