@@ -47,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.lucidera.investigations.R
@@ -163,8 +164,16 @@ fun CaseDetailScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
+            val exif = extractExifData(context, uri)
             persistGalleryImage(context, uri)?.let { storedUri ->
-                pendingPhotoDraft = PendingPhotoDraft(uri = storedUri, attachmentType = AttachmentType.GALLERY)
+                pendingPhotoDraft = PendingPhotoDraft(
+                    uri = storedUri,
+                    attachmentType = AttachmentType.GALLERY,
+                    gpsLat = exif.gpsLat,
+                    gpsLon = exif.gpsLon,
+                    capturedAt = exif.capturedAt,
+                    deviceModel = exif.deviceModel
+                )
             } ?: Toast.makeText(context, "Could not store selected image.", Toast.LENGTH_LONG).show()
         }
     }
@@ -173,7 +182,15 @@ fun CaseDetailScreen(
     ) { success ->
         if (success) {
             cameraUri?.let { uri ->
-                pendingPhotoDraft = PendingPhotoDraft(uri = uri, attachmentType = AttachmentType.CAMERA)
+                val exif = extractExifData(context, uri)
+                pendingPhotoDraft = PendingPhotoDraft(
+                    uri = uri,
+                    attachmentType = AttachmentType.CAMERA,
+                    gpsLat = exif.gpsLat,
+                    gpsLon = exif.gpsLon,
+                    capturedAt = exif.capturedAt,
+                    deviceModel = exif.deviceModel
+                )
             }
         }
     }
@@ -301,7 +318,7 @@ fun CaseDetailScreen(
             item {
                 LucidEraBrandHeader(
                     title = caseItem.title,
-                    subtitle = "Use the phone for field capture, then fold the verified material back into the case file.",
+                    subtitle = "Capture what you find here, then sort it into the case once the picture is clearer.",
                     compact = true
                 )
             }
@@ -311,19 +328,19 @@ fun CaseDetailScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Case file", fontWeight = FontWeight.Bold)
+                        Text("Case overview", fontWeight = FontWeight.Bold)
                         Text("Lead: ${caseItem.leadInvestigator}")
                         Text("Classification: ${caseItem.classification}")
                         Text("Folder: ${caseItem.caseFolderName}")
                         Text("Master note: ${caseItem.masterNoteName}")
-                        Text("Vault path: ${caseItem.savePath}", style = MaterialTheme.typography.bodySmall)
+                        Text("Folder path: ${caseItem.savePath}", style = MaterialTheme.typography.bodySmall)
                         Text("Essential question", fontWeight = FontWeight.Bold)
                         Text(caseItem.essentialQuestion)
                         Text("Primary subject", fontWeight = FontWeight.Bold)
                         Text(caseItem.primarySubject)
-                        Text("Working summary", fontWeight = FontWeight.Bold)
+                        Text("Summary so far", fontWeight = FontWeight.Bold)
                         Text(caseItem.summary)
-                        Text("Publication threshold", fontWeight = FontWeight.Bold)
+                        Text("Ready to publish when", fontWeight = FontWeight.Bold)
                         Text(caseItem.publicationThreshold)
                     }
                 }
@@ -337,13 +354,13 @@ fun CaseDetailScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { showLeadDialog = true }
                     ) {
-                        Text("Add Lead")
+                        Text("Add Source")
                     }
                     Button(
                         modifier = Modifier.weight(1f),
                         onClick = { showEntityDialog = true }
                     ) {
-                        Text("Add Entity")
+                        Text("Add Person")
                     }
                 }
             }
@@ -384,7 +401,7 @@ fun CaseDetailScreen(
                 }
             }
             item {
-                Text("Lead log", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sources and leads", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             items(state.leads, key = { it.id }) { lead ->
                 LeadCard(
@@ -394,7 +411,7 @@ fun CaseDetailScreen(
                 )
             }
             item {
-                Text("Canonical entities", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("People and organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             items(state.entities, key = { it.id }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
@@ -427,7 +444,7 @@ fun CaseDetailScreen(
             if (state.attachments.isEmpty()) {
                 item {
                     Text(
-                        "No photos or attachments logged for this case yet.",
+                        "No photos added to this case yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -481,7 +498,7 @@ fun CaseDetailScreen(
             },
             title = { Text("Delete case?") },
             text = {
-                Text("This removes the case, its leads, its entities, and its saved attachment records from the app.")
+                Text("This removes the case and everything saved under it in the app.")
             }
         )
     }
@@ -496,7 +513,11 @@ fun CaseDetailScreen(
                         uri = pending.uri.toString(),
                         fileName = pending.fileName,
                         caption = caption,
-                        attachmentType = pending.attachmentType
+                        attachmentType = pending.attachmentType,
+                        gpsLat = pending.gpsLat,
+                        gpsLon = pending.gpsLon,
+                        capturedAt = pending.capturedAt,
+                        deviceModel = pending.deviceModel
                     )
                 )
                 pendingPhotoDraft = null
@@ -518,13 +539,13 @@ private fun LeadCard(
         ) {
             Text(lead.sourceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(lead.summary)
-            Text("Source URL: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
+            Text("Source: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
             if (lead.archiveUrl.isNotBlank()) {
-                Text("Archive URL: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
+                Text("Archive: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
             }
-            Text("Collected: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
+            Text("Saved: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(
-                "Status: ${lead.status.name}",
+                "Status: ${lead.status.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = when (lead.status) {
                     LeadStatus.VERIFIED -> MaterialTheme.colorScheme.tertiary
@@ -536,7 +557,7 @@ private fun LeadCard(
                     Text("Mark Verified")
                 }
                 TextButton(onClick = onArchive) {
-                    Text("Archive Lead")
+                    Text("Archive")
                 }
             }
         }
@@ -556,7 +577,7 @@ private fun EntityCard(
         ) {
             Text(entity.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "${entity.entityType.name} · ${entity.confidence.name}",
+                "${entity.entityType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${entity.confidence.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 color = if (entity.confidence == ConfidenceLevel.VERIFIED) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
@@ -599,10 +620,24 @@ private fun AttachmentCard(attachment: CaseAttachmentEntity) {
                 Text(attachment.caption)
             }
             Text(
-                "Source: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                "Added from: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (attachment.gpsLat != null && attachment.gpsLon != null) {
+                Text(
+                    "GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (attachment.capturedAt != null) {
+                Text(
+                    "Captured: ${formatDateTime(attachment.capturedAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -653,13 +688,13 @@ private fun AddLeadDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Lead") },
+        title = { Text("Add Source") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DictationOutlinedTextField(
                     value = sourceName,
                     onValueChange = { sourceName = it },
-                    label = "Source or lead name",
+                    label = "Source name",
                     onDictate = {
                         dictationTarget = DictationTarget.LEAD_NAME
                         speechLauncher.launch(createSpeechIntent())
@@ -668,7 +703,7 @@ private fun AddLeadDialog(
                 DictationOutlinedTextField(
                     value = sourceUrl,
                     onValueChange = { sourceUrl = it },
-                    label = "Live URL",
+                    label = "Source URL",
                     onDictate = {
                         dictationTarget = DictationTarget.LEAD_URL
                         speechLauncher.launch(createSpeechIntent())
@@ -686,7 +721,7 @@ private fun AddLeadDialog(
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Why it matters",
+                    label = "Why this matters",
                     onDictate = {
                         dictationTarget = DictationTarget.LEAD_SUMMARY
                         speechLauncher.launch(createSpeechIntent())
@@ -741,7 +776,7 @@ private fun AddEntityDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Entity") },
+        title = { Text("Add Person or Organization") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DictationOutlinedTextField(
@@ -765,7 +800,7 @@ private fun AddEntityDialog(
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Why this entity matters",
+                    label = "Why this matters",
                     onDictate = {
                         dictationTarget = DictationTarget.ENTITY_SUMMARY
                         speechLauncher.launch(createSpeechIntent())
@@ -799,7 +834,7 @@ private fun AddPhotoCaptionDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add photo note") },
+        title = { Text("Add Photo Caption") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DictationOutlinedTextField(
@@ -815,6 +850,11 @@ private fun AddPhotoCaptionDialog(
 
 private fun formatDate(timestamp: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(timestamp))
+
+private fun formatDateTime(timestamp: Long): String =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(timestamp))
 
@@ -854,10 +894,47 @@ private fun InputStream?.useToCopy(targetFile: File) {
 
 private data class PendingPhotoDraft(
     val uri: Uri,
-    val attachmentType: AttachmentType
+    val attachmentType: AttachmentType,
+    val gpsLat: Double? = null,
+    val gpsLon: Double? = null,
+    val capturedAt: Long? = null,
+    val deviceModel: String? = null
 ) {
     val fileName: String = uri.lastPathSegment?.substringAfterLast('/') ?: "case_attachment.jpg"
 }
+
+private data class ExifData(
+    val gpsLat: Double?,
+    val gpsLon: Double?,
+    val capturedAt: Long?,
+    val deviceModel: String?
+)
+
+private fun extractExifData(context: android.content.Context, uri: Uri): ExifData {
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            val exif = ExifInterface(stream)
+            val latLon = FloatArray(2)
+            val hasGps = exif.getLatLong(latLon)
+            val gpsLat = if (hasGps) latLon[0].toDouble() else null
+            val gpsLon = if (hasGps) latLon[1].toDouble() else null
+            val dateTimeStr = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+            val capturedAt = dateTimeStr?.let { parseExifDateTime(it) }
+            val deviceModel = exif.getAttribute(ExifInterface.TAG_MODEL)?.takeIf { it.isNotBlank() }
+            ExifData(gpsLat, gpsLon, capturedAt, deviceModel)
+        } ?: ExifData(null, null, null, null)
+    }.getOrDefault(ExifData(null, null, null, null))
+}
+
+private fun parseExifDateTime(dateTimeStr: String): Long? =
+    runCatching {
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+        java.time.LocalDateTime.parse(dateTimeStr, formatter)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+    }.getOrNull()
 
 private enum class DictationTarget {
     LEAD_NAME,

@@ -69,7 +69,7 @@ fun CasesScreen(
     ) {
         LucidEraBrandHeader(
             title = "Investigation Cases",
-            subtitle = "Each case should map cleanly to the vault: one folder, one master note, one clear question.",
+            subtitle = "Start a case, keep the question clear, and build it out as the reporting takes shape.",
             compact = true
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -77,7 +77,7 @@ fun CasesScreen(
                 Text("Add Case")
             }
             Button(onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) }) {
-                Text("Import Note")
+                Text("Import Case Note")
             }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -121,7 +121,7 @@ private fun CaseCard(
             Text(caseItem.summary, style = MaterialTheme.typography.bodyMedium)
             Text("Primary subject: ${caseItem.primarySubject}", style = MaterialTheme.typography.bodySmall)
             Text("Folder: ${caseItem.caseFolderName}", style = MaterialTheme.typography.bodySmall)
-            Text("Status: ${caseItem.status.name}", style = MaterialTheme.typography.bodySmall)
+            Text("Status: ${caseItem.status.name.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -143,7 +143,7 @@ private fun AddCaseDialog(
     var masterNoteName by remember { mutableStateOf("") }
     var savePath by remember { mutableStateOf("") }
     var showAdvanced by remember { mutableStateOf(false) }
-    var publicationThreshold by remember { mutableStateOf("Three independent, non-circular sources before treating a claim as established.") }
+    var publicationThreshold by remember { mutableStateOf("Wait until the key claim holds up across at least three solid, independent sources.") }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(CaseDictationTarget.CASE_CODE) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
@@ -194,7 +194,7 @@ private fun AddCaseDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Case") },
+        title = { Text("New Case") },
         text = {
             Column(
                 modifier = Modifier
@@ -225,7 +225,7 @@ private fun AddCaseDialog(
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Working summary",
+                    label = "Summary so far",
                     onDictate = {
                         dictationTarget = CaseDictationTarget.SUMMARY
                         speechLauncher.launch(createSpeechIntent())
@@ -270,14 +270,14 @@ private fun AddCaseDialog(
                 DictationOutlinedTextField(
                     value = publicationThreshold,
                     onValueChange = { publicationThreshold = it },
-                    label = "Publication threshold",
+                    label = "Ready to publish when",
                     onDictate = {
                         dictationTarget = CaseDictationTarget.PUBLICATION_THRESHOLD
                         speechLauncher.launch(createSpeechIntent())
                     }
                 )
                 TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                    Text(if (showAdvanced) "Hide advanced fields" else "Show advanced fields")
+                    Text(if (showAdvanced) "Hide extra fields" else "Show extra fields")
                 }
                 if (showAdvanced) {
                     DictationOutlinedTextField(
@@ -301,7 +301,7 @@ private fun AddCaseDialog(
                     DictationOutlinedTextField(
                         value = savePath,
                         onValueChange = { savePath = it },
-                        label = "Vault path",
+                        label = "Folder path",
                         onDictate = {
                             dictationTarget = CaseDictationTarget.SAVE_PATH
                             speechLauncher.launch(createSpeechIntent())

@@ -214,7 +214,11 @@ class InvestigationRepository(
                 uri = draft.uri,
                 fileName = draft.fileName,
                 caption = draft.caption,
-                attachmentType = draft.attachmentType
+                attachmentType = draft.attachmentType,
+                gpsLat = draft.gpsLat,
+                gpsLon = draft.gpsLon,
+                capturedAt = draft.capturedAt,
+                deviceModel = draft.deviceModel
             )
         )
     }
@@ -269,5 +273,9 @@ data class AttachmentDraft(
     val uri: String,
     val fileName: String,
     val caption: String,
-    val attachmentType: AttachmentType
+    val attachmentType: AttachmentType,
+    val gpsLat: Double? = null,
+    val gpsLon: Double? = null,
+    val capturedAt: Long? = null,
+    val deviceModel: String? = null
 )

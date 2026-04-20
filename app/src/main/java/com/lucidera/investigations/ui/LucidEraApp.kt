@@ -53,6 +53,19 @@ fun LucidEraApp(container: AppContainer) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
+    fun navigateToTopLevel(route: String) {
+        val popped = navController.popBackStack(route, false)
+        if (!popped && currentDestination?.route != route) {
+            navController.navigate(route) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         container.repository.seedIfEmpty()
     }
@@ -72,39 +85,9 @@ fun LucidEraApp(container: AppContainer) {
                         selected = selected,
                         onClick = {
                             when (destination) {
-                                Destination.Dashboard -> {
-                                    val popped = navController.popBackStack(Destination.Dashboard.route, false)
-                                    if (!popped) {
-                                        navController.navigate(Destination.Dashboard.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
-                                Destination.Cases -> {
-                                    val popped = navController.popBackStack(Destination.Cases.route, false)
-                                    if (!popped) {
-                                        navController.navigate(Destination.Cases.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
-                                Destination.Archive -> {
-                                    navController.navigate(Destination.Archive.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
+                                Destination.Dashboard -> navigateToTopLevel(Destination.Dashboard.route)
+                                Destination.Cases -> navigateToTopLevel(Destination.Cases.route)
+                                Destination.Archive -> navigateToTopLevel(Destination.Archive.route)
                                 Destination.CaseDetail -> Unit
                             }
                         },
@@ -135,7 +118,8 @@ fun LucidEraApp(container: AppContainer) {
                 DashboardScreen(
                     viewModel = viewModel,
                     onOpenCases = { navController.navigate(Destination.Cases.route) },
-                    onOpenArchive = { navController.navigate(Destination.Archive.route) }
+                    onOpenArchive = { navController.navigate(Destination.Archive.route) },
+                    onCaseSelected = { navController.navigate(Destination.CaseDetail.create(it)) }
                 )
             }
             composable(Destination.Cases.route) {
@@ -161,24 +145,8 @@ fun LucidEraApp(container: AppContainer) {
                 CaseDetailScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
-                    onOpenHome = {
-                        navController.navigate(Destination.Dashboard.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onOpenCases = {
-                        navController.navigate(Destination.Cases.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
+                    onOpenHome = { navigateToTopLevel(Destination.Dashboard.route) },
+                    onOpenCases = { navigateToTopLevel(Destination.Cases.route) },
                     onDelete = {
                         navController.navigate(Destination.Cases.route) {
                             popUpTo(Destination.Cases.route) {

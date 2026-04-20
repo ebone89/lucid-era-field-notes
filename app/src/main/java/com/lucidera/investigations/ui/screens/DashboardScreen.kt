@@ -1,5 +1,6 @@
 package com.lucidera.investigations.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,7 +27,8 @@ import com.lucidera.investigations.ui.viewmodel.DashboardViewModel
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onOpenCases: () -> Unit,
-    onOpenArchive: () -> Unit
+    onOpenArchive: () -> Unit,
+    onCaseSelected: (Long) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -39,7 +41,7 @@ fun DashboardScreen(
         item {
             LucidEraBrandHeader(
                 title = "Lucid Era Field Notes",
-                subtitle = "Field capture for the Obsidian vault: cases, leads, entities, archives, and evidence notes."
+                subtitle = "A quick place to track cases, save sources, and keep your notes moving."
             )
         }
         item {
@@ -77,42 +79,28 @@ fun DashboardScreen(
             }
         }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Vault shape",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text("Cases live as folders in 10_Investigations, with one master note per case.")
-                    Text("Leads stay raw until they are backed by real sourcing.")
-                    Text("Entities are canonical and should line up with 20_Entities in the vault.")
-                    Text("Archive first. Analysis comes after the page is preserved.")
-                }
-            }
-        }
-        item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onOpenCases) {
-                    Text("Open Cases")
+                    Text("Cases")
                 }
                 Button(onClick = onOpenArchive) {
-                    Text("Check Archive")
+                    Text("Archive")
                 }
             }
         }
         item {
             Text(
-                text = "Current case registry",
+                text = "Recent cases",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
         }
-        items(state.recentCases) { caseItem ->
-            Card {
+        items(state.recentCases, key = { it.id }) { caseItem ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onCaseSelected(caseItem.id) }
+            ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
