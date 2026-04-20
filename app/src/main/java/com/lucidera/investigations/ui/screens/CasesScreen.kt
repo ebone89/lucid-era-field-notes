@@ -107,6 +107,15 @@ fun CasesScreen(
                 }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (state.cases.isEmpty()) {
+                    item {
+                        Text(
+                            "No cases yet. Tap Add Case to start one.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 items(state.cases, key = { it.id }) { caseItem ->
                     CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
                 }

@@ -308,7 +308,7 @@ data class LeadDraft(
     val sourceName: String,
     val sourceUrl: String,
     val archiveUrl: String,
-    val tags: String,
+    val tags: String = "",
     val summary: String,
     val status: LeadStatus = LeadStatus.OPEN
 )
@@ -317,7 +317,7 @@ data class EntityDraft(
     val name: String,
     val entityType: EntityType,
     val confidence: ConfidenceLevel,
-    val aliases: String,
+    val aliases: String = "",
     val summary: String,
     val identifier: String
 )

@@ -355,7 +355,7 @@ fun CaseDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text("Case overview", fontWeight = FontWeight.Bold)
-                        Text("Lead: ${caseItem.leadInvestigator}")
+                        Text("Investigator: ${caseItem.leadInvestigator}")
                         Text("Classification: ${caseItem.classification}")
                         Text("Folder: ${caseItem.caseFolderName}")
                         Text("Master note: ${caseItem.masterNoteName}")
@@ -429,7 +429,16 @@ fun CaseDetailScreen(
                 }
             }
             item {
-                Text("Sources and Leads", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            if (state.leads.isEmpty()) {
+                item {
+                    Text(
+                        "No sources logged yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             items(state.leads, key = { it.id }) { lead ->
                 LeadCard(
@@ -442,6 +451,15 @@ fun CaseDetailScreen(
             }
             item {
                 Text("People and Organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            if (state.entities.isEmpty()) {
+                item {
+                    Text(
+                        "No entities added yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             items(state.entities, key = { it.id }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
@@ -696,7 +714,7 @@ private fun LeadCard(
             if (lead.tags.isNotBlank()) {
                 Text("Tags: ${lead.tags}", style = MaterialTheme.typography.bodySmall)
             }
-            Text("Saved: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
+            Text("Logged: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(
                 "Status: ${lead.status.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -794,7 +812,7 @@ private fun AttachmentCard(
                 Text(attachment.caption)
             }
             Text(
-                "Source: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                "Captured via: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
