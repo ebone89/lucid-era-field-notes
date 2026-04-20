@@ -21,8 +21,8 @@ class InvestigationRepository(
 ) {
 
     val allCases: Flow<List<InvestigationCaseEntity>> = caseDao.observeAllCases()
-    val openLeadCount: Flow<Int> = leadDao.observeOpenLeadCount()
-    val verifiedLeadCount: Flow<Int> = leadDao.observeVerifiedLeadCount()
+    val openLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.OPEN)
+    val verifiedLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.VERIFIED)
     val entityCount: Flow<Int> = entityDao.observeEntityCount()
 
     suspend fun seedIfEmpty() {

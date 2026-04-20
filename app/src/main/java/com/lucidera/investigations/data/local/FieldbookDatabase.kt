@@ -15,7 +15,7 @@ import com.lucidera.investigations.data.local.entity.LeadEntity
 @Database(
     entities = [InvestigationCaseEntity::class, LeadEntity::class, EntityProfileEntity::class, CaseAttachmentEntity::class],
     version = 4,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class FieldbookDatabase : RoomDatabase() {
@@ -29,6 +29,26 @@ abstract class FieldbookDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: FieldbookDatabase? = null
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `case_attachments` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `caseId` INTEGER NOT NULL,
+                        `uri` TEXT NOT NULL,
+                        `fileName` TEXT NOT NULL,
+                        `caption` TEXT NOT NULL,
+                        `attachmentType` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`caseId`) REFERENCES `cases`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_case_attachments_caseId` ON `case_attachments` (`caseId`)")
+            }
+        }
+
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE case_attachments ADD COLUMN gpsLat REAL")
@@ -40,16 +60,12 @@ abstract class FieldbookDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): FieldbookDatabase =
             INSTANCE ?: synchronized(this) {
-                // fallbackToDestructiveMigration: any unhandled version bump wipes all local data.
-                // Replace with explicit Migration objects before adding schema changes to a
-                // build that has been installed on a device with real case data.
                 Room.databaseBuilder(
                     context.applicationContext,
                     FieldbookDatabase::class.java,
                     "fieldbook.db"
                 )
-                    .addMigrations(MIGRATION_3_4)
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

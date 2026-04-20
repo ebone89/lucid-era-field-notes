@@ -20,9 +20,6 @@ interface LeadDao {
     @Query("SELECT * FROM leads WHERE caseId = :caseId ORDER BY collectedAt DESC")
     fun observeLeadsForCase(caseId: Long): Flow<List<LeadEntity>>
 
-    @Query("SELECT COUNT(*) FROM leads WHERE status = 'OPEN'")
-    fun observeOpenLeadCount(): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM leads WHERE status = 'VERIFIED'")
-    fun observeVerifiedLeadCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM leads WHERE status = :status")
+    fun observeLeadCountByStatus(status: LeadStatus): Flow<Int>
 }
