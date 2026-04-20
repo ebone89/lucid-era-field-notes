@@ -3,6 +3,7 @@ package com.lucidera.investigations.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lucidera.investigations.data.CaseStatus
 import com.lucidera.investigations.data.InvestigationRepository
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,7 +26,7 @@ class DashboardViewModel(repository: InvestigationRepository) : ViewModel() {
         repository.entityCount
     ) { cases, openLeads, verifiedLeads, entityCount ->
             DashboardUiState(
-                activeCases = cases.count(),
+                activeCases = cases.count { it.status == CaseStatus.ACTIVE },
                 openLeads = openLeads,
                 verifiedLeads = verifiedLeads,
                 entitiesTracked = entityCount,

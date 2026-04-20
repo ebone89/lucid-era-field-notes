@@ -39,33 +39,23 @@ class CaseDetailViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CaseDetailUiState())
 
     fun addLead(draft: LeadDraft) {
-        viewModelScope.launch {
-            repository.addLead(caseId, draft)
-        }
+        viewModelScope.launch { runCatching { repository.addLead(caseId, draft) } }
     }
 
     fun addEntity(draft: EntityDraft) {
-        viewModelScope.launch {
-            repository.addEntity(caseId, draft)
-        }
+        viewModelScope.launch { runCatching { repository.addEntity(caseId, draft) } }
     }
 
     fun addAttachment(draft: AttachmentDraft) {
-        viewModelScope.launch {
-            repository.addAttachment(caseId, draft)
-        }
+        viewModelScope.launch { runCatching { repository.addAttachment(caseId, draft) } }
     }
 
     fun updateLeadStatus(leadId: Long, status: LeadStatus) {
-        viewModelScope.launch {
-            repository.updateLeadStatus(leadId, status)
-        }
+        viewModelScope.launch { runCatching { repository.updateLeadStatus(leadId, status) } }
     }
 
     fun deleteCase() {
-        viewModelScope.launch {
-            repository.deleteCase(caseId)
-        }
+        viewModelScope.launch { runCatching { repository.deleteCase(caseId) } }
     }
 }
 

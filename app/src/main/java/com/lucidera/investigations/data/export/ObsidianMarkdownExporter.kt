@@ -54,7 +54,15 @@ object ObsidianMarkdownExporter {
             "- No attachments logged in the app for this case."
         } else {
             attachments.joinToString("\n") { attachment ->
-                "- ${attachment.fileName} (${attachment.attachmentType.name.lowercase()})${if (attachment.caption.isNotBlank()) ": ${attachment.caption}" else ""}  \n  Local URI: `${attachment.uri}`"
+                buildString {
+                    append("- ${attachment.fileName} (${attachment.attachmentType.name.lowercase()})${if (attachment.caption.isNotBlank()) ": ${attachment.caption}" else ""}  \n  Local URI: `${attachment.uri}`")
+                    if (attachment.gpsLat != null && attachment.gpsLon != null) {
+                        append("  \n  GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}")
+                    }
+                    if (attachment.capturedAt != null) {
+                        append("  \n  Captured: ${formatDateTime(attachment.capturedAt)}")
+                    }
+                }
             }
         }
 
@@ -157,7 +165,15 @@ ${buildEntityRelatedNotes(entities)}
             "- No photos or attachments logged in this session."
         } else {
             attachments.joinToString("\n") { attachment ->
-                "- ${attachment.fileName}: ${attachment.caption.ifBlank { "Caption still needed." }}"
+                buildString {
+                    append("- ${attachment.fileName}: ${attachment.caption.ifBlank { "Caption still needed." }}")
+                    if (attachment.gpsLat != null && attachment.gpsLon != null) {
+                        append("  \n  GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}")
+                    }
+                    if (attachment.capturedAt != null) {
+                        append("  \n  Captured: ${formatDateTime(attachment.capturedAt)}")
+                    }
+                }
             }
         }
 
@@ -270,7 +286,7 @@ ${entity.summary}
             .replace("/", "-")
             .replace("\\", "-")
             .replace(".", "-")
-            .replace(Regex("\\s+"), "")
+            .replace(Regex("\\s+"), "_")
             .replace(Regex("[^A-Za-z0-9_-]"), "")
         val typeName = entity.entityType.name.lowercase().replaceFirstChar(Char::uppercase)
         return "ENT_${safeName}_$typeName"
@@ -287,6 +303,10 @@ ${entity.summary}
 
     private fun formatDate(timestamp: Long): String =
         dateFormatter.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate())
+
+    private fun formatDateTime(timestamp: Long): String =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
 
     private fun escapePipes(value: String): String = value.replace("|", "\\|")
 }
