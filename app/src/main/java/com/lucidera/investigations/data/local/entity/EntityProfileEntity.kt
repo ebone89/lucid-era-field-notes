@@ -26,6 +26,7 @@ data class EntityProfileEntity(
     val name: String,
     val entityType: EntityType,
     val confidence: ConfidenceLevel,
+    val aliases: String = "",
     val summary: String,
     val identifier: String
 )

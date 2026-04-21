@@ -13,6 +13,9 @@ interface EntityProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEntity(entity: EntityProfileEntity): Long
 
+    @Query("DELETE FROM entity_profiles WHERE id = :entityId")
+    suspend fun deleteEntity(entityId: Long)
+
     @Query("SELECT * FROM entity_profiles WHERE caseId = :caseId ORDER BY name ASC")
     fun observeEntitiesForCase(caseId: Long): Flow<List<EntityProfileEntity>>
 

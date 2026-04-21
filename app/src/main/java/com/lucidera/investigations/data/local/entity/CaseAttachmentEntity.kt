@@ -24,7 +24,12 @@ data class CaseAttachmentEntity(
     val caseId: Long,
     val uri: String,
     val fileName: String,
+    val mimeType: String,
     val caption: String,
     val attachmentType: AttachmentType,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val gpsLat: Double? = null,
+    val gpsLon: Double? = null,
+    val capturedAt: Long? = null,
+    val deviceModel: String? = null
 )

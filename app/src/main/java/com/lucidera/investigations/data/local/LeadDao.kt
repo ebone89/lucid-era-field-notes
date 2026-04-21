@@ -14,15 +14,15 @@ interface LeadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLead(leadEntity: LeadEntity): Long
 
+    @Query("DELETE FROM leads WHERE id = :leadId")
+    suspend fun deleteLead(leadId: Long)
+
     @Query("UPDATE leads SET status = :status WHERE id = :leadId")
     suspend fun updateLeadStatus(leadId: Long, status: LeadStatus)
 
     @Query("SELECT * FROM leads WHERE caseId = :caseId ORDER BY collectedAt DESC")
     fun observeLeadsForCase(caseId: Long): Flow<List<LeadEntity>>
 
-    @Query("SELECT COUNT(*) FROM leads WHERE status = 'OPEN'")
-    fun observeOpenLeadCount(): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM leads WHERE status = 'VERIFIED'")
-    fun observeVerifiedLeadCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM leads WHERE status = :status")
+    fun observeLeadCountByStatus(status: LeadStatus): Flow<Int>
 }

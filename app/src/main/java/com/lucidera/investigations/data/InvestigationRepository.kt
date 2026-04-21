@@ -21,8 +21,8 @@ class InvestigationRepository(
 ) {
 
     val allCases: Flow<List<InvestigationCaseEntity>> = caseDao.observeAllCases()
-    val openLeadCount: Flow<Int> = leadDao.observeOpenLeadCount()
-    val verifiedLeadCount: Flow<Int> = leadDao.observeVerifiedLeadCount()
+    val openLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.OPEN)
+    val verifiedLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.VERIFIED)
     val entityCount: Flow<Int> = entityDao.observeEntityCount()
 
     suspend fun seedIfEmpty() {
@@ -53,6 +53,7 @@ class InvestigationRepository(
                 sourceName = "Sunbiz",
                 sourceUrl = "https://search.sunbiz.org/",
                 archiveUrl = "",
+                tags = "corporate-records, officers",
                 summary = "Check officer overlap between contractors, donors, and related entities.",
                 status = LeadStatus.OPEN
             )
@@ -64,6 +65,7 @@ class InvestigationRepository(
                 name = "Palatka Utilities",
                 entityType = EntityType.ORGANIZATION,
                 confidence = ConfidenceLevel.PROBABLE,
+                aliases = "",
                 summary = "Initial subject organization for mapping procurement and governance relationships.",
                 identifier = "ORG-PALATKA-UTIL"
             )
@@ -92,6 +94,7 @@ class InvestigationRepository(
                 sourceName = "Request log",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "records-request, timeline",
                 summary = "Track request dates, agency responses, and appeal deadlines in one place.",
                 status = LeadStatus.OPEN
             )
@@ -120,6 +123,7 @@ class InvestigationRepository(
                 sourceName = "Parcel table",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "parcel, land-records",
                 summary = "Use the parcel list as the search key for deeds, tax rolls, easements, agendas, and rezoning notices.",
                 status = LeadStatus.OPEN
             )
@@ -130,6 +134,7 @@ class InvestigationRepository(
                 sourceName = "Power corridor claim",
                 sourceUrl = "",
                 archiveUrl = "",
+                tags = "power, infrastructure",
                 summary = "Separate corridor adjacency from actual deliverability, price, and upgrade responsibility.",
                 status = LeadStatus.OPEN
             )
@@ -140,6 +145,7 @@ class InvestigationRepository(
                 name = "Rayonier / Raydient",
                 entityType = EntityType.COMPANY,
                 confidence = ConfidenceLevel.PROBABLE,
+                aliases = "Raydient",
                 summary = "Seller-side entity posture for the Gilbert Road site. Corporate role is strong; some corporate-history claims still need primary verification.",
                 identifier = "ENT-RAYONIER-COMPANY"
             )
@@ -180,10 +186,28 @@ class InvestigationRepository(
                 sourceName = draft.sourceName,
                 sourceUrl = draft.sourceUrl,
                 archiveUrl = draft.archiveUrl,
+                tags = draft.tags,
                 summary = draft.summary,
                 status = draft.status
             )
         )
+    }
+
+    suspend fun updateLead(lead: LeadEntity, draft: LeadDraft) {
+        leadDao.insertLead(
+            lead.copy(
+                sourceName = draft.sourceName,
+                sourceUrl = draft.sourceUrl,
+                archiveUrl = draft.archiveUrl,
+                tags = draft.tags,
+                summary = draft.summary,
+                status = draft.status
+            )
+        )
+    }
+
+    suspend fun deleteLead(leadId: Long) {
+        leadDao.deleteLead(leadId)
     }
 
     suspend fun deleteCase(caseId: Long) {
@@ -201,10 +225,28 @@ class InvestigationRepository(
                 name = draft.name,
                 entityType = draft.entityType,
                 confidence = draft.confidence,
+                aliases = draft.aliases,
                 summary = draft.summary,
                 identifier = draft.identifier
             )
         )
+    }
+
+    suspend fun updateEntity(entity: EntityProfileEntity, draft: EntityDraft) {
+        entityDao.insertEntity(
+            entity.copy(
+                name = draft.name,
+                entityType = draft.entityType,
+                confidence = draft.confidence,
+                aliases = draft.aliases,
+                summary = draft.summary,
+                identifier = draft.identifier
+            )
+        )
+    }
+
+    suspend fun deleteEntity(entityId: Long) {
+        entityDao.deleteEntity(entityId)
     }
 
     suspend fun addAttachment(caseId: Long, draft: AttachmentDraft) {
@@ -213,10 +255,23 @@ class InvestigationRepository(
                 caseId = caseId,
                 uri = draft.uri,
                 fileName = draft.fileName,
+                mimeType = draft.mimeType,
                 caption = draft.caption,
-                attachmentType = draft.attachmentType
+                attachmentType = draft.attachmentType,
+                gpsLat = draft.gpsLat,
+                gpsLon = draft.gpsLon,
+                capturedAt = draft.capturedAt,
+                deviceModel = draft.deviceModel
             )
         )
+    }
+
+    suspend fun updateAttachmentCaption(attachmentId: Long, caption: String) {
+        attachmentDao.updateAttachmentCaption(attachmentId, caption)
+    }
+
+    suspend fun deleteAttachment(attachmentId: Long) {
+        attachmentDao.deleteAttachment(attachmentId)
     }
 
     suspend fun lookupArchive(url: String): WaybackLookupResult {
@@ -253,6 +308,7 @@ data class LeadDraft(
     val sourceName: String,
     val sourceUrl: String,
     val archiveUrl: String,
+    val tags: String = "",
     val summary: String,
     val status: LeadStatus = LeadStatus.OPEN
 )
@@ -261,6 +317,7 @@ data class EntityDraft(
     val name: String,
     val entityType: EntityType,
     val confidence: ConfidenceLevel,
+    val aliases: String = "",
     val summary: String,
     val identifier: String
 )
@@ -268,6 +325,11 @@ data class EntityDraft(
 data class AttachmentDraft(
     val uri: String,
     val fileName: String,
+    val mimeType: String,
     val caption: String,
-    val attachmentType: AttachmentType
+    val attachmentType: AttachmentType,
+    val gpsLat: Double? = null,
+    val gpsLon: Double? = null,
+    val capturedAt: Long? = null,
+    val deviceModel: String? = null
 )

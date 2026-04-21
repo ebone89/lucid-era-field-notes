@@ -1,6 +1,10 @@
 package com.lucidera.investigations.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,13 +16,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lucidera.investigations.data.export.CasePackageExporter
 import com.lucidera.investigations.ui.components.LucidEraBrandHeader
 import com.lucidera.investigations.ui.viewmodel.DashboardViewModel
 
@@ -26,103 +37,121 @@ import com.lucidera.investigations.ui.viewmodel.DashboardViewModel
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onOpenCases: () -> Unit,
-    onOpenArchive: () -> Unit
+    onOpenArchive: () -> Unit,
+    onCaseSelected: (Long) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            LucidEraBrandHeader(
-                title = "Lucid Era Field Notes",
-                subtitle = "Field capture for the Obsidian vault: cases, leads, entities, archives, and evidence notes."
-            )
+    val exportAllLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        uri?.let { viewModel.exportAllCases(context, it) }
+    }
+
+    LaunchedEffect(state.userMessage) {
+        state.userMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearUserMessage()
         }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                MetricCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Active Cases",
-                    value = state.activeCases.toString()
-                )
-                MetricCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Open Leads",
-                    value = state.openLeads.toString()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                LucidEraBrandHeader(
+                    title = "Lucid Era Field Notes",
+                    subtitle = "Active cases, lead counts, and recent activity at a glance."
                 )
             }
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                MetricCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Verified Leads",
-                    value = state.verifiedLeads.toString()
-                )
-                MetricCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Entity Profiles",
-                    value = state.entitiesTracked.toString()
-                )
-            }
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = "Vault shape",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                    MetricCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Active Cases",
+                        value = state.activeCases.toString()
                     )
-                    Text("Cases live as folders in 10_Investigations, with one master note per case.")
-                    Text("Leads stay raw until they are backed by real sourcing.")
-                    Text("Entities are canonical and should line up with 20_Entities in the vault.")
-                    Text("Archive first. Analysis comes after the page is preserved.")
+                    MetricCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Open Leads",
+                        value = state.openLeads.toString()
+                    )
                 }
             }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onOpenCases) {
-                    Text("Open Cases")
-                }
-                Button(onClick = onOpenArchive) {
-                    Text("Check Archive")
-                }
-            }
-        }
-        item {
-            Text(
-                text = "Current case registry",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        items(state.recentCases) { caseItem ->
-            Card {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(caseItem.caseCode, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                    Text(caseItem.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(caseItem.summary, style = MaterialTheme.typography.bodyMedium)
+                    MetricCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Verified Leads",
+                        value = state.verifiedLeads.toString()
+                    )
+                    MetricCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Entity Profiles",
+                        value = state.entitiesTracked.toString()
+                    )
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(onClick = onOpenCases, modifier = Modifier.weight(1f)) {
+                        Text("Cases")
+                    }
+                    Button(onClick = onOpenArchive, modifier = Modifier.weight(1f)) {
+                        Text("Archive")
+                    }
+                    Button(
+                        onClick = { exportAllLauncher.launch(CasePackageExporter.buildVaultPackageFileName()) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Export All")
+                    }
+                }
+            }
+            item {
+                Text(
+                    text = "Recent Cases",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            items(state.recentCases, key = { it.id }) { caseItem ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCaseSelected(caseItem.id) }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(caseItem.caseCode, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                        Text(caseItem.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(caseItem.summary, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }
 

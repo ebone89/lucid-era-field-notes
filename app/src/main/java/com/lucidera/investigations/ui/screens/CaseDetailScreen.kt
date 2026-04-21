@@ -2,25 +2,29 @@ package com.lucidera.investigations.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
@@ -35,8 +39,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +56,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.lucidera.investigations.R
@@ -59,12 +67,17 @@ import com.lucidera.investigations.data.EntityDraft
 import com.lucidera.investigations.data.EntityType
 import com.lucidera.investigations.data.LeadDraft
 import com.lucidera.investigations.data.LeadStatus
+import com.lucidera.investigations.data.export.CasePackageExporter
 import com.lucidera.investigations.data.export.MarkdownShareHelper
 import com.lucidera.investigations.data.export.ObsidianMarkdownExporter
 import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
+import com.lucidera.investigations.ui.components.DictationOutlinedTextField
 import com.lucidera.investigations.ui.components.LucidEraBrandHeader
+import com.lucidera.investigations.ui.components.appendDictation
+import com.lucidera.investigations.ui.components.createSpeechIntent
+import com.lucidera.investigations.ui.components.rememberSpeechToTextLauncher
 import com.lucidera.investigations.ui.viewmodel.CaseDetailViewModel
 import java.io.File
 import java.io.FileOutputStream
@@ -72,7 +85,6 @@ import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,8 +102,23 @@ fun CaseDetailScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
+    var pendingPackageExport by remember { mutableStateOf<ExportPackage?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var leadToEdit by remember { mutableStateOf<LeadEntity?>(null) }
+    var leadToDelete by remember { mutableStateOf<LeadEntity?>(null) }
+    var entityToEdit by remember { mutableStateOf<EntityProfileEntity?>(null) }
+    var entityToDelete by remember { mutableStateOf<EntityProfileEntity?>(null) }
+    var attachmentToEdit by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
+    var attachmentToDelete by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.userMessage) {
+        state.userMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUserMessage()
+        }
+    }
 
     if (state.case == null) {
         Column(
@@ -132,12 +159,45 @@ fun CaseDetailScreen(
             Toast.makeText(context, it.message ?: "Export failed.", Toast.LENGTH_LONG).show()
         }
     }
+    val packageExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val export = pendingPackageExport
+        pendingPackageExport = null
+        if (uri == null || export == null) {
+            return@rememberLauncherForActivityResult
+        }
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                CasePackageExporter.writeCasePackage(
+                    context = context,
+                    outputStream = output,
+                    markdownFileName = export.markdownFileName,
+                    markdown = export.markdown,
+                    attachments = export.attachments
+                )
+            } ?: error("Could not open export target.")
+        }.onSuccess {
+            Toast.makeText(context, "${export.label} exported.", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, it.message ?: "Export failed.", Toast.LENGTH_LONG).show()
+        }
+    }
     val galleryPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
+            val exif = extractExifData(context, uri)
             persistGalleryImage(context, uri)?.let { storedUri ->
-                pendingPhotoDraft = PendingPhotoDraft(uri = storedUri, attachmentType = AttachmentType.GALLERY)
+                pendingPhotoDraft = PendingPhotoDraft(
+                    uri = storedUri,
+                    attachmentType = AttachmentType.GALLERY,
+                    mimeType = resolveMimeType(context, uri) ?: "image/*",
+                    gpsLat = exif.gpsLat,
+                    gpsLon = exif.gpsLon,
+                    capturedAt = exif.capturedAt,
+                    deviceModel = exif.deviceModel
+                )
             } ?: Toast.makeText(context, "Could not store selected image.", Toast.LENGTH_LONG).show()
         }
     }
@@ -146,11 +206,21 @@ fun CaseDetailScreen(
     ) { success ->
         if (success) {
             cameraUri?.let { uri ->
-                pendingPhotoDraft = PendingPhotoDraft(uri = uri, attachmentType = AttachmentType.CAMERA)
+                val exif = extractExifData(context, uri)
+                pendingPhotoDraft = PendingPhotoDraft(
+                    uri = uri,
+                    attachmentType = AttachmentType.CAMERA,
+                    mimeType = "image/jpeg",
+                    gpsLat = exif.gpsLat,
+                    gpsLon = exif.gpsLon,
+                    capturedAt = exif.capturedAt,
+                    deviceModel = exif.deviceModel
+                )
             }
         }
     }
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(caseItem.caseCode) },
@@ -187,6 +257,21 @@ fun CaseDetailScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Export Case Package") },
+                                onClick = {
+                                    val fileName = CasePackageExporter.buildPackageFileName(caseItem)
+                                    pendingPackageExport = ExportPackage(
+                                        label = "Case package",
+                                        fileName = fileName,
+                                        markdownFileName = caseItem.masterNoteName,
+                                        markdown = markdown,
+                                        attachments = state.attachments
+                                    )
+                                    showOverflowMenu = false
+                                    packageExportLauncher.launch(fileName)
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Export Session Log") },
                                 onClick = {
                                     val fileName = ObsidianMarkdownExporter.buildSessionLogFileName(caseItem)
@@ -208,6 +293,19 @@ fun CaseDetailScreen(
                                         fileName = caseItem.masterNoteName,
                                         markdown = markdown,
                                         chooserTitle = "Share case note"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share Case Package") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    MarkdownShareHelper.shareCasePackage(
+                                        context = context,
+                                        fileName = caseItem.masterNoteName,
+                                        markdown = markdown,
+                                        attachments = state.attachments,
+                                        chooserTitle = "Share case package"
                                     )
                                 }
                             )
@@ -246,7 +344,7 @@ fun CaseDetailScreen(
             item {
                 LucidEraBrandHeader(
                     title = caseItem.title,
-                    subtitle = "Use the phone for field capture, then fold the verified material back into the case file.",
+                    subtitle = "Log sources, entities, and field photos. Export to the vault when the session wraps.",
                     compact = true
                 )
             }
@@ -256,19 +354,19 @@ fun CaseDetailScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Case file", fontWeight = FontWeight.Bold)
-                        Text("Lead: ${caseItem.leadInvestigator}")
+                        Text("Case overview", fontWeight = FontWeight.Bold)
+                        Text("Investigator: ${caseItem.leadInvestigator}")
                         Text("Classification: ${caseItem.classification}")
                         Text("Folder: ${caseItem.caseFolderName}")
                         Text("Master note: ${caseItem.masterNoteName}")
-                        Text("Vault path: ${caseItem.savePath}", style = MaterialTheme.typography.bodySmall)
+                        Text("Folder path: ${caseItem.savePath}", style = MaterialTheme.typography.bodySmall)
                         Text("Essential question", fontWeight = FontWeight.Bold)
                         Text(caseItem.essentialQuestion)
                         Text("Primary subject", fontWeight = FontWeight.Bold)
                         Text(caseItem.primarySubject)
-                        Text("Working summary", fontWeight = FontWeight.Bold)
+                        Text("Summary so far", fontWeight = FontWeight.Bold)
                         Text(caseItem.summary)
-                        Text("Publication threshold", fontWeight = FontWeight.Bold)
+                        Text("Ready to publish when", fontWeight = FontWeight.Bold)
                         Text(caseItem.publicationThreshold)
                     }
                 }
@@ -282,13 +380,13 @@ fun CaseDetailScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { showLeadDialog = true }
                     ) {
-                        Text("Add Lead")
+                        Text("Add Source")
                     }
                     Button(
                         modifier = Modifier.weight(1f),
                         onClick = { showEntityDialog = true }
                     ) {
-                        Text("Add Entity")
+                        Text("Add Person")
                     }
                 }
             }
@@ -311,7 +409,8 @@ fun CaseDetailScreen(
                         }
                     ) {
                         Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
-                        Text(" Camera")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Camera")
                     }
                     Button(
                         modifier = Modifier.weight(1f),
@@ -324,24 +423,45 @@ fun CaseDetailScreen(
                         }
                     ) {
                         Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                        Text(" Gallery")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Gallery")
                     }
                 }
             }
             item {
-                Text("Lead log", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-            items(state.leads, key = { it.id }) { lead ->
+            if (state.leads.isEmpty()) {
+                item {
+                    Text(
+                        "No sources logged yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            items(state.leads, key = { "lead_${it.id}" }) { lead ->
                 LeadCard(
                     lead = lead,
                     onVerify = { viewModel.updateLeadStatus(lead.id, LeadStatus.VERIFIED) },
-                    onArchive = { viewModel.updateLeadStatus(lead.id, LeadStatus.ARCHIVED) }
+                    onArchive = { viewModel.updateLeadStatus(lead.id, LeadStatus.ARCHIVED) },
+                    onEdit = { leadToEdit = lead },
+                    onDelete = { leadToDelete = lead }
                 )
             }
             item {
-                Text("Canonical entities", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("People and Organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-            items(state.entities, key = { it.id }) { entity ->
+            if (state.entities.isEmpty()) {
+                item {
+                    Text(
+                        "No entities added yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            items(state.entities, key = { "entity_${it.id}" }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
                     ObsidianMarkdownExporter.buildEntityMarkdown(entity, caseItem)
                 }
@@ -363,7 +483,9 @@ fun CaseDetailScreen(
                             markdown = entityMarkdown,
                             chooserTitle = "Share entity note"
                         )
-                    }
+                    },
+                    onEdit = { entityToEdit = entity },
+                    onDelete = { entityToDelete = entity }
                 )
             }
             item {
@@ -372,14 +494,18 @@ fun CaseDetailScreen(
             if (state.attachments.isEmpty()) {
                 item {
                     Text(
-                        "No photos or attachments logged for this case yet.",
+                        "No photos added to this case yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            items(state.attachments, key = { it.id }) { attachment ->
-                AttachmentCard(attachment)
+            items(state.attachments, key = { "attachment_${it.id}" }) { attachment ->
+                AttachmentCard(
+                    attachment = attachment,
+                    onEdit = { attachmentToEdit = attachment },
+                    onDelete = { attachmentToDelete = attachment }
+                )
             }
         }
     }
@@ -387,6 +513,7 @@ fun CaseDetailScreen(
     if (showLeadDialog) {
         AddLeadDialog(
             onDismiss = { showLeadDialog = false },
+            title = "Add Source",
             onSave = {
                 viewModel.addLead(it)
                 showLeadDialog = false
@@ -397,10 +524,83 @@ fun CaseDetailScreen(
     if (showEntityDialog) {
         AddEntityDialog(
             onDismiss = { showEntityDialog = false },
+            title = "Add Person or Organization",
             onSave = {
                 viewModel.addEntity(it)
                 showEntityDialog = false
             }
+        )
+    }
+
+    val editingLead = leadToEdit
+    if (editingLead != null) {
+        AddLeadDialog(
+            initialLead = editingLead,
+            title = "Edit Source",
+            onDismiss = { leadToEdit = null },
+            onSave = {
+                viewModel.updateLead(editingLead, it)
+                leadToEdit = null
+            }
+        )
+    }
+
+    if (leadToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { leadToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteLead(leadToDelete?.id ?: return@TextButton)
+                        leadToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { leadToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete source?") },
+            text = { Text("This removes the source from the case.") }
+        )
+    }
+
+    val editingEntity = entityToEdit
+    if (editingEntity != null) {
+        AddEntityDialog(
+            initialEntity = editingEntity,
+            title = "Edit Person or Organization",
+            onDismiss = { entityToEdit = null },
+            onSave = {
+                viewModel.updateEntity(editingEntity, it)
+                entityToEdit = null
+            }
+        )
+    }
+
+    if (entityToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { entityToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteEntity(entityToDelete?.id ?: return@TextButton)
+                        entityToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entityToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete entity?") },
+            text = { Text("This removes the entity from the case.") }
         )
     }
 
@@ -426,7 +626,7 @@ fun CaseDetailScreen(
             },
             title = { Text("Delete case?") },
             text = {
-                Text("This removes the case, its leads, its entities, and its saved attachment records from the app.")
+                Text("This removes the case and everything saved under it in the app.")
             }
         )
     }
@@ -440,12 +640,52 @@ fun CaseDetailScreen(
                     AttachmentDraft(
                         uri = pending.uri.toString(),
                         fileName = pending.fileName,
+                        mimeType = pending.mimeType,
                         caption = caption,
-                        attachmentType = pending.attachmentType
+                        attachmentType = pending.attachmentType,
+                        gpsLat = pending.gpsLat,
+                        gpsLon = pending.gpsLon,
+                        capturedAt = pending.capturedAt,
+                        deviceModel = pending.deviceModel
                     )
                 )
                 pendingPhotoDraft = null
             }
+        )
+    }
+
+    val editingAttachment = attachmentToEdit
+    if (editingAttachment != null) {
+        EditAttachmentDialog(
+            attachment = editingAttachment,
+            onDismiss = { attachmentToEdit = null },
+            onSave = { caption ->
+                viewModel.updateAttachmentCaption(editingAttachment.id, caption)
+                attachmentToEdit = null
+            }
+        )
+    }
+
+    if (attachmentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { attachmentToDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAttachment(attachmentToDelete?.id ?: return@TextButton)
+                        attachmentToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { attachmentToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete attachment?") },
+            text = { Text("This removes the attachment record from the app.") }
         )
     }
 }
@@ -454,7 +694,9 @@ fun CaseDetailScreen(
 private fun LeadCard(
     lead: LeadEntity,
     onVerify: () -> Unit,
-    onArchive: () -> Unit
+    onArchive: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card {
         Column(
@@ -463,25 +705,36 @@ private fun LeadCard(
         ) {
             Text(lead.sourceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(lead.summary)
-            Text("Source URL: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
-            if (lead.archiveUrl.isNotBlank()) {
-                Text("Archive URL: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
+            if (lead.sourceUrl.isNotBlank()) {
+                Text("Source: ${lead.sourceUrl}", style = MaterialTheme.typography.bodySmall)
             }
-            Text("Collected: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
+            if (lead.archiveUrl.isNotBlank()) {
+                Text("Archive: ${lead.archiveUrl}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (lead.tags.isNotBlank()) {
+                Text("Tags: ${lead.tags}", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Logged: ${formatDate(lead.collectedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(
-                "Status: ${lead.status.name}",
+                "Status: ${lead.status.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = when (lead.status) {
                     LeadStatus.VERIFIED -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionChipRow {
                 TextButton(onClick = onVerify) {
                     Text("Mark Verified")
                 }
                 TextButton(onClick = onArchive) {
-                    Text("Archive Lead")
+                    Text("Archive")
+                }
+                TextButton(onClick = onEdit) {
+                    Text("Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Text("Delete")
                 }
             }
         }
@@ -492,7 +745,9 @@ private fun LeadCard(
 private fun EntityCard(
     entity: EntityProfileEntity,
     onExport: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card {
         Column(
@@ -501,7 +756,7 @@ private fun EntityCard(
         ) {
             Text(entity.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "${entity.entityType.name} · ${entity.confidence.name}",
+                "${entity.entityType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${entity.confidence.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 color = if (entity.confidence == ConfidenceLevel.VERIFIED) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
@@ -509,13 +764,22 @@ private fun EntityCard(
                 }
             )
             Text(entity.summary)
+            if (entity.aliases.isNotBlank()) {
+                Text("Aliases: ${entity.aliases}", style = MaterialTheme.typography.bodySmall)
+            }
             Text("Identifier: ${entity.identifier}", style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionChipRow {
                 TextButton(onClick = onExport) {
                     Text("Export Note")
                 }
                 TextButton(onClick = onShare) {
                     Text("Share Note")
+                }
+                TextButton(onClick = onEdit) {
+                    Text("Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Text("Delete")
                 }
             }
         }
@@ -523,7 +787,11 @@ private fun EntityCard(
 }
 
 @Composable
-private fun AttachmentCard(attachment: CaseAttachmentEntity) {
+private fun AttachmentCard(
+    attachment: CaseAttachmentEntity,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -544,27 +812,77 @@ private fun AttachmentCard(attachment: CaseAttachmentEntity) {
                 Text(attachment.caption)
             }
             Text(
-                "Source: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                "Captured via: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (attachment.mimeType.isNotBlank()) {
+                Text(
+                    "Type: ${attachment.mimeType}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (attachment.gpsLat != null && attachment.gpsLon != null) {
+                Text(
+                    "GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (attachment.capturedAt != null) {
+                Text(
+                    "Captured: ${formatDateTime(attachment.capturedAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            ActionChipRow {
+                TextButton(onClick = onEdit) {
+                    Icon(Icons.Outlined.Edit, contentDescription = null)
+                    Text(" Edit")
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Text(" Delete")
+                }
+            }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActionChipRow(
+    content: @Composable () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        content()
     }
 }
 
 @Composable
 private fun AddLeadDialog(
+    initialLead: LeadEntity? = null,
+    title: String,
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
 ) {
-    var sourceName by remember { mutableStateOf("") }
-    var sourceUrl by remember { mutableStateOf("") }
-    var archiveUrl by remember { mutableStateOf("") }
-    var summary by remember { mutableStateOf("") }
+    var sourceName by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceName.orEmpty()) }
+    var sourceUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceUrl.orEmpty()) }
+    var archiveUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl.orEmpty()) }
+    var tags by remember(initialLead?.id) { mutableStateOf(initialLead?.tags.orEmpty()) }
+    var summary by remember(initialLead?.id) { mutableStateOf(initialLead?.summary.orEmpty()) }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
         when (dictationTarget) {
+            DictationTarget.LEAD_URL -> sourceUrl = appendDictation(sourceUrl, result)
+            DictationTarget.LEAD_ARCHIVE_URL -> archiveUrl = appendDictation(archiveUrl, result)
             DictationTarget.LEAD_SUMMARY -> summary = appendDictation(summary, result)
             DictationTarget.LEAD_NAME -> sourceName = appendDictation(sourceName, result)
             else -> Unit
@@ -581,6 +899,7 @@ private fun AddLeadDialog(
                             sourceName = sourceName,
                             sourceUrl = sourceUrl,
                             archiveUrl = archiveUrl,
+                            tags = tags,
                             summary = summary,
                             status = LeadStatus.OPEN
                         )
@@ -596,27 +915,50 @@ private fun AddLeadDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Lead") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = sourceName, onValueChange = { sourceName = it }, label = { Text("Source or lead name") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.LEAD_NAME
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate source")
-                }
-                OutlinedTextField(value = sourceUrl, onValueChange = { sourceUrl = it }, label = { Text("Live URL") })
-                OutlinedTextField(value = archiveUrl, onValueChange = { archiveUrl = it }, label = { Text("Archive URL") })
-                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why it matters") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.LEAD_SUMMARY
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate summary")
-                }
+                DictationOutlinedTextField(
+                    value = sourceName,
+                    onValueChange = { sourceName = it },
+                    label = "Source name",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_NAME
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = sourceUrl,
+                    onValueChange = { sourceUrl = it },
+                    label = "Source URL",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_URL
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = archiveUrl,
+                    onValueChange = { archiveUrl = it },
+                    label = "Archive URL",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_ARCHIVE_URL
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = "Why this matters",
+                    onDictate = {
+                        dictationTarget = DictationTarget.LEAD_SUMMARY
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags") }
+                )
             }
         }
     )
@@ -624,18 +966,28 @@ private fun AddLeadDialog(
 
 @Composable
 private fun AddEntityDialog(
+    initialEntity: EntityProfileEntity? = null,
+    title: String,
     onDismiss: () -> Unit,
     onSave: (EntityDraft) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var summary by remember { mutableStateOf("") }
-    var identifier by remember { mutableStateOf("") }
+    var name by remember(initialEntity?.id) { mutableStateOf(initialEntity?.name.orEmpty()) }
+    var entityType by remember(initialEntity?.id) {
+        mutableStateOf(initialEntity?.entityType ?: EntityType.ORGANIZATION)
+    }
+    var confidence by remember(initialEntity?.id) {
+        mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.PROBABLE)
+    }
+    var aliases by remember(initialEntity?.id) { mutableStateOf(initialEntity?.aliases.orEmpty()) }
+    var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
+    var identifier by remember(initialEntity?.id) { mutableStateOf(initialEntity?.identifier.orEmpty()) }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.ENTITY_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
         when (dictationTarget) {
             DictationTarget.ENTITY_NAME -> name = appendDictation(name, result)
             DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, result)
+            DictationTarget.ENTITY_IDENTIFIER -> identifier = appendDictation(identifier, result)
             else -> Unit
         }
     }
@@ -648,8 +1000,9 @@ private fun AddEntityDialog(
                     onSave(
                         EntityDraft(
                             name = name,
-                            entityType = EntityType.ORGANIZATION,
-                            confidence = ConfidenceLevel.PROBABLE,
+                            entityType = entityType,
+                            confidence = confidence,
+                            aliases = aliases,
                             summary = summary,
                             identifier = identifier
                         )
@@ -665,26 +1018,69 @@ private fun AddEntityDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add Entity") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Entity name") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.ENTITY_NAME
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate name")
+                DictationOutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = "Name",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_NAME
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                ActionChipRow {
+                    EntityType.entries.forEach { type ->
+                        TextButton(onClick = { entityType = type }) {
+                            Text(
+                                text = type.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (entityType == type) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
                 }
-                OutlinedTextField(value = identifier, onValueChange = { identifier = it }, label = { Text("Identifier") })
-                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Why this entity matters") })
-                TextButton(onClick = {
-                    dictationTarget = DictationTarget.ENTITY_SUMMARY
-                    speechLauncher.launch(createSpeechIntent())
-                }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate summary")
+                ActionChipRow {
+                    ConfidenceLevel.entries.forEach { level ->
+                        TextButton(onClick = { confidence = level }) {
+                            Text(
+                                text = level.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (confidence == level) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
                 }
+                DictationOutlinedTextField(
+                    value = identifier,
+                    onValueChange = { identifier = it },
+                    label = "Identifier",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_IDENTIFIER
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
+                OutlinedTextField(
+                    value = aliases,
+                    onValueChange = { aliases = it },
+                    label = { Text("Aliases") }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = "Why this matters",
+                    onDictate = {
+                        dictationTarget = DictationTarget.ENTITY_SUMMARY
+                        speechLauncher.launch(createSpeechIntent())
+                    }
+                )
             }
         }
     )
@@ -713,19 +1109,48 @@ private fun AddPhotoCaptionDialog(
                 Text("Cancel")
             }
         },
-        title = { Text("Add photo note") },
+        title = { Text("Add Photo Caption") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                DictationOutlinedTextField(
                     value = caption,
                     onValueChange = { caption = it },
-                    label = { Text("Caption or note") }
+                    label = "Caption or note",
+                    onDictate = { speechLauncher.launch(createSpeechIntent()) }
                 )
-                TextButton(onClick = { speechLauncher.launch(createSpeechIntent()) }) {
-                    Icon(Icons.Outlined.Mic, contentDescription = null)
-                    Text(" Dictate caption")
-                }
             }
+        }
+    )
+}
+
+@Composable
+private fun EditAttachmentDialog(
+    attachment: CaseAttachmentEntity,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var caption by remember(attachment.id) { mutableStateOf(attachment.caption) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onSave(caption) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        title = { Text("Edit Attachment") },
+        text = {
+            OutlinedTextField(
+                value = caption,
+                onValueChange = { caption = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Caption or note") }
+            )
         }
     )
 }
@@ -735,32 +1160,10 @@ private fun formatDate(timestamp: Long): String =
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(timestamp))
 
-@Composable
-private fun rememberSpeechToTextLauncher(
-    context: android.content.Context,
-    onResult: (String) -> Unit
-) = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-    if (result.resultCode == android.app.Activity.RESULT_OK) {
-        val spoken = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-        if (!spoken.isNullOrBlank()) {
-            onResult(spoken)
-        } else {
-            Toast.makeText(context, "No speech captured.", Toast.LENGTH_SHORT).show()
-        }
-    }
-}
-
-private fun createSpeechIntent(): Intent =
-    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
-    }
-
-private fun appendDictation(existing: String, incoming: String): String =
-    if (existing.isBlank()) incoming else "$existing $incoming"
+private fun formatDateTime(timestamp: Long): String =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(timestamp))
 
 private fun createCaseImageFile(context: android.content.Context): File {
     val dir = File(context.filesDir, "case_images").apply { mkdirs() }
@@ -798,15 +1201,60 @@ private fun InputStream?.useToCopy(targetFile: File) {
 
 private data class PendingPhotoDraft(
     val uri: Uri,
-    val attachmentType: AttachmentType
+    val attachmentType: AttachmentType,
+    val mimeType: String,
+    val gpsLat: Double? = null,
+    val gpsLon: Double? = null,
+    val capturedAt: Long? = null,
+    val deviceModel: String? = null
 ) {
     val fileName: String = uri.lastPathSegment?.substringAfterLast('/') ?: "case_attachment.jpg"
 }
 
+private data class ExifData(
+    val gpsLat: Double?,
+    val gpsLon: Double?,
+    val capturedAt: Long?,
+    val deviceModel: String?
+)
+
+private fun extractExifData(context: android.content.Context, uri: Uri): ExifData {
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            val exif = ExifInterface(stream)
+            val latLon = exif.latLong
+            val gpsLat = latLon?.getOrNull(0)?.toDouble()
+            val gpsLon = latLon?.getOrNull(1)?.toDouble()
+            val dateTimeStr = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+            val capturedAt = dateTimeStr?.let { parseExifDateTime(it) }
+            val deviceModel = exif.getAttribute(ExifInterface.TAG_MODEL)?.takeIf { it.isNotBlank() }
+            ExifData(gpsLat, gpsLon, capturedAt, deviceModel)
+        } ?: ExifData(null, null, null, null)
+    }.getOrDefault(ExifData(null, null, null, null))
+}
+
+private fun resolveMimeType(
+    context: android.content.Context,
+    uri: Uri
+): String? = context.contentResolver.getType(uri)
+
+private fun parseExifDateTime(dateTimeStr: String): Long? =
+    runCatching {
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+        java.time.LocalDateTime.parse(dateTimeStr, formatter)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+    }.getOrNull()
+
 private enum class DictationTarget {
     LEAD_NAME,
+    LEAD_URL,
+    LEAD_ARCHIVE_URL,
     LEAD_SUMMARY,
     ENTITY_NAME,
+    ENTITY_IDENTIFIER,
     ENTITY_SUMMARY
 }
 
@@ -814,4 +1262,12 @@ private data class ExportDocument(
     val label: String,
     val fileName: String,
     val contents: String
+)
+
+private data class ExportPackage(
+    val label: String,
+    val fileName: String,
+    val markdownFileName: String,
+    val markdown: String,
+    val attachments: List<CaseAttachmentEntity>
 )
