@@ -386,7 +386,7 @@ fun CaseDetailScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { showEntityDialog = true }
                     ) {
-                        Text("Add Person")
+                        Text("Add Entity")
                     }
                 }
             }
@@ -450,7 +450,7 @@ fun CaseDetailScreen(
                 )
             }
             item {
-                Text("People and Organizations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Entities", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             if (state.entities.isEmpty()) {
                 item {
@@ -524,7 +524,7 @@ fun CaseDetailScreen(
     if (showEntityDialog) {
         AddEntityDialog(
             onDismiss = { showEntityDialog = false },
-            title = "Add Person or Organization",
+            title = "Add Entity",
             onSave = {
                 viewModel.addEntity(it)
                 showEntityDialog = false
@@ -572,7 +572,7 @@ fun CaseDetailScreen(
     if (editingEntity != null) {
         AddEntityDialog(
             initialEntity = editingEntity,
-            title = "Edit Person or Organization",
+            title = "Edit Entity",
             onDismiss = { entityToEdit = null },
             onSave = {
                 viewModel.updateEntity(editingEntity, it)
@@ -948,7 +948,7 @@ private fun AddLeadDialog(
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Why this matters",
+                    label = "Summary",
                     onDictate = {
                         dictationTarget = DictationTarget.LEAD_SUMMARY
                         speechLauncher.launch(createSpeechIntent())
@@ -980,14 +980,15 @@ private fun AddEntityDialog(
     }
     var aliases by remember(initialEntity?.id) { mutableStateOf(initialEntity?.aliases.orEmpty()) }
     var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
-    var identifier by remember(initialEntity?.id) { mutableStateOf(initialEntity?.identifier.orEmpty()) }
+    var identifier by remember(initialEntity?.id) {
+        mutableStateOf(initialEntity?.identifier?.ifBlank { "Unknown" } ?: "Unknown")
+    }
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.ENTITY_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
         when (dictationTarget) {
             DictationTarget.ENTITY_NAME -> name = appendDictation(name, result)
             DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, result)
-            DictationTarget.ENTITY_IDENTIFIER -> identifier = appendDictation(identifier, result)
             else -> Unit
         }
     }
@@ -1008,7 +1009,7 @@ private fun AddEntityDialog(
                         )
                     )
                 },
-                enabled = name.isNotBlank() && summary.isNotBlank() && identifier.isNotBlank()
+                enabled = name.isNotBlank() && summary.isNotBlank()
             ) {
                 Text("Save")
             }
@@ -1058,15 +1059,18 @@ private fun AddEntityDialog(
                         }
                     }
                 }
-                DictationOutlinedTextField(
-                    value = identifier,
-                    onValueChange = { identifier = it },
-                    label = "Identifier",
-                    onDictate = {
-                        dictationTarget = DictationTarget.ENTITY_IDENTIFIER
-                        speechLauncher.launch(createSpeechIntent())
+                Text("Role", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ActionChipRow {
+                    listOf("Unknown", "Primary Subject", "Person of Interest", "Associate", "Witness", "Source", "Suspect", "Vehicle", "Location", "Organization").forEach { role ->
+                        TextButton(onClick = { identifier = role }) {
+                            Text(
+                                role,
+                                color = if (identifier == role) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                )
+                }
                 OutlinedTextField(
                     value = aliases,
                     onValueChange = { aliases = it },
@@ -1075,7 +1079,7 @@ private fun AddEntityDialog(
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Why this matters",
+                    label = "Summary",
                     onDictate = {
                         dictationTarget = DictationTarget.ENTITY_SUMMARY
                         speechLauncher.launch(createSpeechIntent())

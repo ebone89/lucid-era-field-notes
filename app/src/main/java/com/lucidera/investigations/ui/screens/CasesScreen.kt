@@ -50,6 +50,15 @@ import com.lucidera.investigations.ui.components.createSpeechIntent
 import com.lucidera.investigations.ui.components.rememberSpeechToTextLauncher
 import com.lucidera.investigations.ui.viewmodel.CasesViewModel
 
+private enum class CaseSortOrder { DATE_DESC, DATE_ASC, CODE }
+
+private fun nextCaseCode(cases: List<InvestigationCaseEntity>): String {
+    val max = cases.mapNotNull { c ->
+        Regex("^CASE-(\\d+)$").matchEntire(c.caseCode)?.groupValues?.get(1)?.toIntOrNull()
+    }.maxOrNull() ?: 0
+    return "CASE-%03d".format(max + 1)
+}
+
 @Composable
 fun CasesScreen(
     viewModel: CasesViewModel,
@@ -57,6 +66,14 @@ fun CasesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
+    var sortOrder by remember { mutableStateOf(CaseSortOrder.DATE_DESC) }
+    val sortedCases = remember(state.cases, sortOrder) {
+        when (sortOrder) {
+            CaseSortOrder.DATE_DESC -> state.cases.sortedByDescending { it.createdAt }
+            CaseSortOrder.DATE_ASC -> state.cases.sortedBy { it.createdAt }
+            CaseSortOrder.CODE -> state.cases.sortedBy { it.caseCode }
+        }
+    }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -106,6 +123,21 @@ fun CasesScreen(
                     Text("Import Note")
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(
+                    CaseSortOrder.DATE_DESC to "Newest",
+                    CaseSortOrder.DATE_ASC to "Oldest",
+                    CaseSortOrder.CODE to "Code"
+                ).forEach { (order, label) ->
+                    TextButton(onClick = { sortOrder = order }) {
+                        Text(
+                            label,
+                            color = if (sortOrder == order) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (state.cases.isEmpty()) {
                     item {
@@ -116,7 +148,7 @@ fun CasesScreen(
                         )
                     }
                 }
-                items(state.cases, key = { it.id }) { caseItem ->
+                items(sortedCases, key = { it.id }) { caseItem ->
                     CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
                 }
             }
@@ -129,6 +161,7 @@ fun CasesScreen(
 
     if (showDialog) {
         AddCaseDialog(
+            nextCaseCode = nextCaseCode(state.cases),
             onDismiss = { showDialog = false },
             onSave = {
                 viewModel.addCase(it)
@@ -169,10 +202,11 @@ private fun CaseCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddCaseDialog(
+    nextCaseCode: String,
     onDismiss: () -> Unit,
     onSave: (CaseDraft) -> Unit
 ) {
-    var caseCode by remember { mutableStateOf("") }
+    var caseCode by remember { mutableStateOf(nextCaseCode) }
     var title by remember { mutableStateOf("") }
     var essentialQuestion by remember { mutableStateOf("") }
     var primarySubject by remember { mutableStateOf("") }
