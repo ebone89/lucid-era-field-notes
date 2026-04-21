@@ -29,6 +29,12 @@ abstract class FieldbookDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: FieldbookDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Schema was identical between v1 and v2; version bump only.
+            }
+        }
+
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -78,7 +84,7 @@ abstract class FieldbookDatabase : RoomDatabase() {
                     FieldbookDatabase::class.java,
                     "fieldbook.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { INSTANCE = it }
             }
