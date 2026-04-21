@@ -78,8 +78,9 @@ fun DashboardScreen(
         ) {
             item {
                 LucidEraBrandHeader(
-                    title = "Lucid Era Field Notes",
-                    subtitle = "Active cases, lead counts, and recent activity at a glance."
+                    title = "Investigations",
+                    subtitle = "Active cases, lead counts, and recent activity at a glance.",
+                    centered = true
                 )
             }
             item {
@@ -127,9 +128,15 @@ fun DashboardScreen(
                     Button(onClick = onOpenArchive, modifier = Modifier.weight(1f)) {
                         Text("Archive")
                     }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
                     Button(
-                        onClick = { exportAllLauncher.launch(CasePackageExporter.buildVaultPackageFileName()) },
-                        modifier = Modifier.weight(1f)
+                        onClick = { exportAllLauncher.launch(CasePackageExporter.buildVaultPackageFileName()) }
                     ) {
                         Text("Export All")
                     }

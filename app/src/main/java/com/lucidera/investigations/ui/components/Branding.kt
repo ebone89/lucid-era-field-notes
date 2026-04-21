@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lucidera.investigations.R
 
@@ -26,7 +27,8 @@ fun LucidEraBrandHeader(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    compact: Boolean = false
+    compact: Boolean = false,
+    centered: Boolean = false
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -36,7 +38,7 @@ fun LucidEraBrandHeader(
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start
+            horizontalAlignment = if (compact || centered) Alignment.CenterHorizontally else Alignment.Start
         ) {
             Image(
                 painter = painterResource(id = R.drawable.lucid_era_logo),
@@ -50,12 +52,14 @@ fun LucidEraBrandHeader(
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = if (centered) TextAlign.Center else TextAlign.Start
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = if (centered) TextAlign.Center else TextAlign.Start
             )
         }
     }
