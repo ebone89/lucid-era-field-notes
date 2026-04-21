@@ -1,5 +1,10 @@
 package com.lucidera.investigations.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -35,7 +40,6 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.lucidera.investigations.ui.components.AudioPlayer
 import com.lucidera.investigations.ui.components.AudioRecorder
-import java.util.UUID
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +64,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +74,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -123,28 +130,37 @@ fun CaseDetailScreen(
     onDelete: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showLeadDialog by remember { mutableStateOf(false) }
-    var showEntityDialog by remember { mutableStateOf(false) }
-    var leadStatusFilter by remember { mutableStateOf<LeadStatus?>(null) }
+    var showLeadDialog by rememberSaveable { mutableStateOf(false) }
+    var showEntityDialog by rememberSaveable { mutableStateOf(false) }
+    var leadStatusFilter by rememberSaveable { mutableStateOf<LeadStatus?>(null) }
+    var sectionSort by rememberSaveable { mutableStateOf(CaseSectionSort.NEWEST) }
     var pendingExport by remember { mutableStateOf<ExportDocument?>(null) }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var pendingPhotoDraft by remember { mutableStateOf<PendingPhotoDraft?>(null) }
     var pendingPackageExport by remember { mutableStateOf<ExportPackage?>(null) }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
-    var leadToEdit by remember { mutableStateOf<LeadEntity?>(null) }
-    var leadToDelete by remember { mutableStateOf<LeadEntity?>(null) }
-    var entityToEdit by remember { mutableStateOf<EntityProfileEntity?>(null) }
-    var entityToDelete by remember { mutableStateOf<EntityProfileEntity?>(null) }
-    var attachmentToEdit by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
-    var attachmentToDelete by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
+    var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var leadToEditId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var leadToDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var entityToEditId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var entityToDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var attachmentToEditId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var attachmentToDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
     val context = LocalContext.current
-    var isRecording by remember { mutableStateOf(false) }
-    var audioFile by remember { mutableStateOf<File?>(null) }
+    var isRecording by rememberSaveable { mutableStateOf(false) }
+    var audioFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     val recorder = remember { AudioRecorder(context) }
     val player = remember { AudioPlayer(context) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val dialogStateHolder = rememberSaveableStateHolder()
+    val audioFile = audioFilePath?.let(::File)
+    val leadToEdit = leadToEditId?.let { id -> state.leads.firstOrNull { it.id == id } }
+    val leadToDelete = leadToDeleteId?.let { id -> state.leads.firstOrNull { it.id == id } }
+    val entityToEdit = entityToEditId?.let { id -> state.entities.firstOrNull { it.id == id } }
+    val entityToDelete = entityToDeleteId?.let { id -> state.entities.firstOrNull { it.id == id } }
+    val attachmentToEdit = attachmentToEditId?.let { id -> state.attachments.firstOrNull { it.id == id } }
+    val attachmentToDelete = attachmentToDeleteId?.let { id -> state.attachments.firstOrNull { it.id == id } }
 
     LaunchedEffect(state.userMessage) {
         state.userMessage?.let { message ->
@@ -280,6 +296,25 @@ fun CaseDetailScreen(
                     fileHash = calculateFileHash(context, uri)
                 )
             }
+        }
+    }
+    fun startAudioRecording() {
+        val file = createCaseAudioFile(context)
+        audioFilePath = file.absolutePath
+        if (recorder.startRecording(file)) {
+            isRecording = true
+        } else {
+            audioFilePath = null
+            Toast.makeText(context, "Could not start recording.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startAudioRecording()
+        } else {
+            Toast.makeText(context, "Microphone permission is required to record audio.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -437,14 +472,19 @@ fun CaseDetailScreen(
                     Button(
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            val file = createCaseImageFile(context)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file
-                            )
-                            cameraUri = uri
-                            cameraCapture.launch(uri)
+                            runCatching {
+                                val file = createCaseImageFile(context)
+                                FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                            }.onSuccess { uri ->
+                                cameraUri = uri
+                                cameraCapture.launch(uri)
+                            }.onFailure {
+                                Toast.makeText(context, "Camera failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     ) {
                         Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
@@ -454,7 +494,12 @@ fun CaseDetailScreen(
                     Button(
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            scanner.getStartScanIntent(context as android.app.Activity)
+                            val activity = context.findActivity()
+                            if (activity == null) {
+                                Toast.makeText(context, "Scanner is unavailable from this screen.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            scanner.getStartScanIntent(activity)
                                 .addOnSuccessListener { intentSender ->
                                     scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
                                 }
@@ -492,29 +537,45 @@ fun CaseDetailScreen(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             if (!isRecording) {
-                                val file = File(context.cacheDir, "REC_${UUID.randomUUID()}.mp4")
-                                audioFile = file
-                                recorder.startRecording(file)
-                                isRecording = true
-                            } else {
-                                recorder.stopRecording()
-                                isRecording = false
-                                audioFile?.let { file ->
-                                    val uri = FileProvider.getUriForFile(
+                                if (ContextCompat.checkSelfPermission(
                                         context,
-                                        "${context.packageName}.fileprovider",
-                                        file
-                                    )
-                                    pendingPhotoDraft = PendingPhotoDraft(
-                                        uri = uri,
-                                        attachmentType = AttachmentType.AUDIO,
-                                        mimeType = "audio/mp4",
-                                        gpsLat = null,
-                                        gpsLon = null,
-                                        capturedAt = System.currentTimeMillis(),
-                                        deviceModel = android.os.Build.MODEL,
-                                        fileHash = calculateFileHash(context, uri)
-                                    )
+                                        Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    startAudioRecording()
+                                } else {
+                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            } else {
+                                val stopped = recorder.stopRecording()
+                                isRecording = false
+                                audioFilePath = null
+                                if (!stopped) {
+                                    Toast.makeText(context, "Could not finish recording.", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                                audioFile?.let { file ->
+                                    runCatching {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            file
+                                        )
+                                        PendingPhotoDraft(
+                                            uri = uri,
+                                            attachmentType = AttachmentType.AUDIO,
+                                            mimeType = "audio/mp4",
+                                            gpsLat = null,
+                                            gpsLon = null,
+                                            capturedAt = System.currentTimeMillis(),
+                                            deviceModel = android.os.Build.MODEL,
+                                            fileHash = calculateFileHash(context, uri)
+                                        )
+                                    }.onSuccess { draft ->
+                                        pendingPhotoDraft = draft
+                                    }.onFailure {
+                                        Toast.makeText(context, "Could not attach recording.", Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             }
                         }
@@ -567,7 +628,23 @@ fun CaseDetailScreen(
                 }
             }
             item {
-                Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sort By", style = MaterialTheme.typography.labelMedium)
+            }
+            item {
+                ActionChipRow {
+                    CaseSectionSort.entries.forEach { sort ->
+                        TextButton(onClick = { sectionSort = sort }) {
+                            Text(
+                                sort.label,
+                                color = if (sectionSort == sort) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                Text("Source Status", style = MaterialTheme.typography.labelMedium)
             }
             item {
                 val allStatuses = listOf(null) + LeadStatus.entries
@@ -584,9 +661,14 @@ fun CaseDetailScreen(
                     }
                 }
             }
+            item {
+                Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
             val filteredLeads = if (leadStatusFilter == null) state.leads
                                 else state.leads.filter { it.status == leadStatusFilter }
-            if (filteredLeads.isEmpty()) {
+            val sortedLeads = sortLeads(filteredLeads, sectionSort)
+            val sortedEntities = sortEntities(state.entities, sectionSort)
+            if (sortedLeads.isEmpty()) {
                 item {
                     Text(
                         if (leadStatusFilter == null) "No sources logged yet."
@@ -596,13 +678,13 @@ fun CaseDetailScreen(
                     )
                 }
             }
-            items(filteredLeads, key = { "lead_${it.id}" }) { lead ->
+            items(sortedLeads, key = { "lead_${it.id}" }) { lead ->
                 LeadCard(
                     lead = lead,
                     onVerify = { viewModel.updateLeadStatus(lead.id, LeadStatus.VERIFIED) },
                     onArchive = { viewModel.updateLeadStatus(lead.id, LeadStatus.ARCHIVED) },
-                    onEdit = { leadToEdit = lead },
-                    onDelete = { leadToDelete = lead }
+                    onEdit = { leadToEditId = lead.id },
+                    onDelete = { leadToDeleteId = lead.id }
                 )
             }
             item {
@@ -617,7 +699,7 @@ fun CaseDetailScreen(
                     )
                 }
             }
-            items(state.entities, key = { "entity_${it.id}" }) { entity ->
+            items(sortedEntities, key = { "entity_${it.id}" }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
                     ObsidianMarkdownExporter.buildEntityMarkdown(entity, caseItem)
                 }
@@ -640,8 +722,8 @@ fun CaseDetailScreen(
                             chooserTitle = "Share entity note"
                         )
                     },
-                    onEdit = { entityToEdit = entity },
-                    onDelete = { entityToDelete = entity }
+                    onEdit = { entityToEditId = entity.id },
+                    onDelete = { entityToDeleteId = entity.id }
                 )
             }
             item {
@@ -650,7 +732,7 @@ fun CaseDetailScreen(
             if (state.attachments.isEmpty()) {
                 item {
                     Text(
-                        "No photos added to this case yet.",
+                        "No attachments added to this case yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -662,8 +744,8 @@ fun CaseDetailScreen(
                 }
                 AttachmentCard(
                     attachment = attachment,
-                    onEdit = { attachmentToEdit = attachment },
-                    onDelete = { attachmentToDelete = attachment },
+                    onEdit = { attachmentToEditId = attachment.id },
+                    onDelete = { attachmentToDeleteId = attachment.id },
                     onTranscribe = {
                         speechLauncher.launch(createSpeechIntent())
                     },
@@ -677,66 +759,72 @@ fun CaseDetailScreen(
 
     if (showLeadDialog) {
         val scope = rememberCoroutineScope()
-        AddLeadDialog(
-            onDismiss = { showLeadDialog = false },
-            title = "Add Source",
-            onFetchArchive = { url ->
-                scope.launch {
-                    viewModel.fetchArchiveUrl(url)
+        dialogStateHolder.SaveableStateProvider("add_lead_dialog") {
+            AddLeadDialog(
+                onDismiss = { showLeadDialog = false },
+                title = "Add Source",
+                onFetchArchive = { url ->
+                    scope.launch {
+                        viewModel.fetchArchiveUrl(url)
+                    }
+                },
+                onSave = {
+                    viewModel.addLead(it)
+                    showLeadDialog = false
                 }
-            },
-            onSave = {
-                viewModel.addLead(it)
-                showLeadDialog = false
-            }
-        )
+            )
+        }
     }
 
     if (showEntityDialog) {
-        AddEntityDialog(
-            onDismiss = { showEntityDialog = false },
-            title = "Add Entity",
-            onSave = {
-                viewModel.addEntity(it)
-                showEntityDialog = false
-            }
-        )
+        dialogStateHolder.SaveableStateProvider("add_entity_dialog") {
+            AddEntityDialog(
+                onDismiss = { showEntityDialog = false },
+                title = "Add Entity",
+                onSave = {
+                    viewModel.addEntity(it)
+                    showEntityDialog = false
+                }
+            )
+        }
     }
 
-    val editingLead = leadToEdit
-    if (editingLead != null) {
+    if (leadToEdit != null) {
+        val editingLead = leadToEdit
         val scope = rememberCoroutineScope()
-        AddLeadDialog(
-            initialLead = editingLead,
-            title = "Edit Source",
-            onFetchArchive = { url ->
-                scope.launch {
-                    viewModel.fetchArchiveUrl(url)
+        dialogStateHolder.SaveableStateProvider("edit_lead_dialog_${editingLead.id}") {
+            AddLeadDialog(
+                initialLead = editingLead,
+                title = "Edit Source",
+                onFetchArchive = { url ->
+                    scope.launch {
+                        viewModel.fetchArchiveUrl(url)
+                    }
+                },
+                onDismiss = { leadToEditId = null },
+                onSave = {
+                    viewModel.updateLead(editingLead, it)
+                    leadToEditId = null
                 }
-            },
-            onDismiss = { leadToEdit = null },
-            onSave = {
-                viewModel.updateLead(editingLead, it)
-                leadToEdit = null
-            }
-        )
+            )
+        }
     }
 
     if (leadToDelete != null) {
         AlertDialog(
-            onDismissRequest = { leadToDelete = null },
+            onDismissRequest = { leadToDeleteId = null },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteLead(leadToDelete?.id ?: return@TextButton)
-                        leadToDelete = null
+                        viewModel.deleteLead(leadToDelete.id)
+                        leadToDeleteId = null
                     }
                 ) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { leadToDelete = null }) {
+                TextButton(onClick = { leadToDeleteId = null }) {
                     Text("Cancel")
                 }
             },
@@ -745,34 +833,36 @@ fun CaseDetailScreen(
         )
     }
 
-    val editingEntity = entityToEdit
-    if (editingEntity != null) {
-        AddEntityDialog(
-            initialEntity = editingEntity,
-            title = "Edit Entity",
-            onDismiss = { entityToEdit = null },
-            onSave = {
-                viewModel.updateEntity(editingEntity, it)
-                entityToEdit = null
-            }
-        )
+    if (entityToEdit != null) {
+        val editingEntity = entityToEdit
+        dialogStateHolder.SaveableStateProvider("edit_entity_dialog_${editingEntity.id}") {
+            AddEntityDialog(
+                initialEntity = editingEntity,
+                title = "Edit Entity",
+                onDismiss = { entityToEditId = null },
+                onSave = {
+                    viewModel.updateEntity(editingEntity, it)
+                    entityToEditId = null
+                }
+            )
+        }
     }
 
     if (entityToDelete != null) {
         AlertDialog(
-            onDismissRequest = { entityToDelete = null },
+            onDismissRequest = { entityToDeleteId = null },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteEntity(entityToDelete?.id ?: return@TextButton)
-                        entityToDelete = null
+                        viewModel.deleteEntity(entityToDelete.id)
+                        entityToDeleteId = null
                     }
                 ) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { entityToDelete = null }) {
+                TextButton(onClick = { entityToDeleteId = null }) {
                     Text("Cancel")
                 }
             },
@@ -856,56 +946,61 @@ fun CaseDetailScreen(
     }
 
     if (pendingPhotoDraft != null) {
-        AddPhotoCaptionDialog(
-            onDismiss = { pendingPhotoDraft = null },
-            onSave = { caption ->
-                val pending = pendingPhotoDraft ?: return@AddPhotoCaptionDialog
-                viewModel.addAttachment(
-                    AttachmentDraft(
-                        uri = pending.uri.toString(),
-                        fileName = pending.fileName,
-                        mimeType = pending.mimeType,
-                        caption = caption,
-                        attachmentType = pending.attachmentType,
-                        gpsLat = pending.gpsLat,
-                        gpsLon = pending.gpsLon,
-                        capturedAt = pending.capturedAt,
-                        deviceModel = pending.deviceModel,
-                        fileHash = pending.fileHash
+        dialogStateHolder.SaveableStateProvider("add_photo_caption_dialog") {
+            AddPhotoCaptionDialog(
+                attachmentType = pendingPhotoDraft!!.attachmentType,
+                onDismiss = { pendingPhotoDraft = null },
+                onSave = { caption ->
+                    val pending = pendingPhotoDraft ?: return@AddPhotoCaptionDialog
+                    viewModel.addAttachment(
+                        AttachmentDraft(
+                            uri = pending.uri.toString(),
+                            fileName = pending.fileName,
+                            mimeType = pending.mimeType,
+                            caption = caption,
+                            attachmentType = pending.attachmentType,
+                            gpsLat = pending.gpsLat,
+                            gpsLon = pending.gpsLon,
+                            capturedAt = pending.capturedAt,
+                            deviceModel = pending.deviceModel,
+                            fileHash = pending.fileHash
+                        )
                     )
-                )
-                pendingPhotoDraft = null
-            }
-        )
+                    pendingPhotoDraft = null
+                }
+            )
+        }
     }
 
-    val editingAttachment = attachmentToEdit
-    if (editingAttachment != null) {
-        EditAttachmentDialog(
-            attachment = editingAttachment,
-            onDismiss = { attachmentToEdit = null },
-            onSave = { caption ->
-                viewModel.updateAttachmentCaption(editingAttachment.id, caption)
-                attachmentToEdit = null
-            }
-        )
+    if (attachmentToEdit != null) {
+        val editingAttachment = attachmentToEdit
+        dialogStateHolder.SaveableStateProvider("edit_attachment_dialog_${editingAttachment.id}") {
+            EditAttachmentDialog(
+                attachment = editingAttachment,
+                onDismiss = { attachmentToEditId = null },
+                onSave = { caption ->
+                    viewModel.updateAttachmentCaption(editingAttachment.id, caption)
+                    attachmentToEditId = null
+                }
+            )
+        }
     }
 
     if (attachmentToDelete != null) {
         AlertDialog(
-            onDismissRequest = { attachmentToDelete = null },
+            onDismissRequest = { attachmentToDeleteId = null },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteAttachment(attachmentToDelete?.id ?: return@TextButton)
-                        attachmentToDelete = null
+                        viewModel.deleteAttachment(attachmentToDelete.id)
+                        attachmentToDeleteId = null
                     }
                 ) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { attachmentToDelete = null }) {
+                TextButton(onClick = { attachmentToDeleteId = null }) {
                     Text("Cancel")
                 }
             },
@@ -1130,15 +1225,15 @@ private fun AddLeadDialog(
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
 ) {
-    var sourceName by remember { mutableStateOf(initialLead?.sourceName ?: "") }
-    var summary by remember { mutableStateOf(initialLead?.summary ?: "") }
-    var sourceUrl by remember { mutableStateOf(initialLead?.sourceUrl ?: "") }
-    var archiveUrl by remember { mutableStateOf(initialLead?.archiveUrl ?: "") }
-    var tags by remember { mutableStateOf(initialLead?.tags ?: "") }
-    var status by remember { mutableStateOf(initialLead?.status ?: LeadStatus.OPEN) }
-    var latitude by remember { mutableStateOf(initialLead?.latitude) }
-    var longitude by remember { mutableStateOf(initialLead?.longitude) }
-    var isLocating by remember { mutableStateOf(false) }
+    var sourceName by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.sourceName ?: "") }
+    var summary by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.summary ?: "") }
+    var sourceUrl by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.sourceUrl ?: "") }
+    var archiveUrl by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl ?: "") }
+    var tags by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.tags ?: "") }
+    var status by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.status ?: LeadStatus.OPEN) }
+    var latitude by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.latitude) }
+    var longitude by rememberSaveable(initialLead?.id) { mutableStateOf(initialLead?.longitude) }
+    var isLocating by rememberSaveable(initialLead?.id) { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1265,12 +1360,12 @@ private fun AddEntityDialog(
     onDismiss: () -> Unit,
     onSave: (EntityDraft) -> Unit
 ) {
-    var name by remember { mutableStateOf(initialEntity?.name ?: "") }
-    var entityType by remember { mutableStateOf(initialEntity?.entityType ?: EntityType.PERSON) }
-    var confidence by remember { mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.UNCONFIRMED) }
-    var summary by remember { mutableStateOf(initialEntity?.summary ?: "") }
-    var identifier by remember { mutableStateOf(initialEntity?.identifier ?: "") }
-    var aliases by remember { mutableStateOf(initialEntity?.aliases ?: "") }
+    var name by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.name ?: "") }
+    var entityType by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.entityType ?: EntityType.PERSON) }
+    var confidence by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.UNCONFIRMED) }
+    var summary by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.summary ?: "") }
+    var identifier by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.identifier ?: "") }
+    var aliases by rememberSaveable(initialEntity?.id) { mutableStateOf(initialEntity?.aliases ?: "") }
 
     val speechLauncher = rememberSpeechToTextLauncher { text, target ->
         when (target as? DictationTarget) {
@@ -1353,23 +1448,27 @@ private fun AddEntityDialog(
 
 @Composable
 private fun AddPhotoCaptionDialog(
+    attachmentType: AttachmentType,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    var caption by remember { mutableStateOf("") }
+    var caption by rememberSaveable { mutableStateOf("") }
+    val title = attachmentDialogTitle(attachmentType)
+    val label = attachmentFieldLabel(attachmentType)
+    val confirmText = attachmentSaveLabel(attachmentType)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Photo Caption") },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = caption,
                 onValueChange = { caption = it },
-                label = { Text("Caption") }
+                label = { Text(label) }
             )
         },
         confirmButton = {
             Button(onClick = { onSave(caption) }) {
-                Text("Save Photo")
+                Text(confirmText)
             }
         },
         dismissButton = {
@@ -1386,7 +1485,7 @@ private fun EditAttachmentDialog(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    var caption by remember { mutableStateOf(attachment.caption) }
+    var caption by rememberSaveable(attachment.id) { mutableStateOf(attachment.caption) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Caption") },
@@ -1417,9 +1516,59 @@ private fun formatDate(millis: Long): String {
     return formatter.format(instant)
 }
 
+private fun createCaseAudioFile(context: Context): File {
+    val dir = File(context.cacheDir, "recordings").apply { mkdirs() }
+    return File.createTempFile("REC_", ".mp4", dir)
+}
+
 private fun createCaseImageFile(context: android.content.Context): File {
     val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
     return File.createTempFile("IMG_", ".jpg", dir)
+}
+
+private enum class CaseSectionSort(val label: String) {
+    NEWEST("Newest"),
+    OLDEST("Oldest"),
+    A_TO_Z("A-Z"),
+    Z_TO_A("Z-A")
+}
+
+private fun sortLeads(leads: List<LeadEntity>, sort: CaseSectionSort): List<LeadEntity> = when (sort) {
+    CaseSectionSort.NEWEST -> leads.sortedByDescending { it.collectedAt }
+    CaseSectionSort.OLDEST -> leads.sortedBy { it.collectedAt }
+    CaseSectionSort.A_TO_Z -> leads.sortedBy { it.sourceName.lowercase() }
+    CaseSectionSort.Z_TO_A -> leads.sortedByDescending { it.sourceName.lowercase() }
+}
+
+private fun sortEntities(
+    entities: List<EntityProfileEntity>,
+    sort: CaseSectionSort
+): List<EntityProfileEntity> = when (sort) {
+    CaseSectionSort.NEWEST -> entities.sortedByDescending { it.id }
+    CaseSectionSort.OLDEST -> entities.sortedBy { it.id }
+    CaseSectionSort.A_TO_Z -> entities.sortedBy { it.name.lowercase() }
+    CaseSectionSort.Z_TO_A -> entities.sortedByDescending { it.name.lowercase() }
+}
+
+private fun attachmentDialogTitle(type: AttachmentType): String = when (type) {
+    AttachmentType.AUDIO -> "Add Recording Notes"
+    else -> "Add Photo Caption"
+}
+
+private fun attachmentFieldLabel(type: AttachmentType): String = when (type) {
+    AttachmentType.AUDIO -> "Notes"
+    else -> "Caption"
+}
+
+private fun attachmentSaveLabel(type: AttachmentType): String = when (type) {
+    AttachmentType.AUDIO -> "Save Recording"
+    else -> "Save Photo"
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private fun persistGalleryImage(context: android.content.Context, uri: Uri): Uri? {

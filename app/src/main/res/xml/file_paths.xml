@@ -3,7 +3,10 @@
     <cache-path
         name="shared_markdown"
         path="shared/" />
-    <files-path
+    <cache-path
+        name="case_recordings"
+        path="recordings/" />
+    <external-files-path
         name="case_images"
-        path="case_images/" />
+        path="Pictures/" />
 </paths>

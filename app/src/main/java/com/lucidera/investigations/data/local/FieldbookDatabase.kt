@@ -1,17 +1,20 @@
 package com.lucidera.investigations.data.local
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import net.zetetic.database.sqlcipher.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
+import java.security.GeneralSecurityException
 
 @Database(
     entities = [InvestigationCaseEntity::class, LeadEntity::class, EntityProfileEntity::class, CaseAttachmentEntity::class],
@@ -27,8 +30,15 @@ abstract class FieldbookDatabase : RoomDatabase() {
     abstract fun attachmentDao(): AttachmentDao
 
     companion object {
+        private const val TAG = "FieldbookDatabase"
+        private const val DATABASE_NAME = "fieldbook.db"
+        private const val SQLCIPHER_LIBRARY_NAME = "sqlcipher"
+
         @Volatile
         private var INSTANCE: FieldbookDatabase? = null
+
+        @Volatile
+        private var isSqlCipherLoaded = false
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -92,26 +102,84 @@ abstract class FieldbookDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): FieldbookDatabase =
             INSTANCE ?: synchronized(this) {
-                val passphrase = CryptoManager.getPassphrase(context).toByteArray()
-                val factory = SupportFactory(passphrase)
-                
-                Room.databaseBuilder(
-                    context.applicationContext,
-                    FieldbookDatabase::class.java,
-                    "fieldbook.db"
-                )
-                    .openHelperFactory(factory)
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7,
-                        MIGRATION_7_8
-                    )
-                    .build()
-                    .also { INSTANCE = it }
+                INSTANCE ?: openOrRecoverDatabase(context.applicationContext).also { INSTANCE = it }
             }
+
+        private fun openOrRecoverDatabase(context: Context): FieldbookDatabase {
+            return runCatching {
+                buildDatabase(context).also(::validateDatabaseOpen)
+            }.recoverCatching { error ->
+                if (!isRecoverableStorageFailure(error)) {
+                    throw error
+                }
+
+                Log.w(TAG, "Unreadable local database detected. Resetting local storage.", error)
+                INSTANCE?.close()
+                INSTANCE = null
+                context.deleteDatabase(DATABASE_NAME)
+                CryptoManager.resetLocalEncryptionState(context)
+                buildDatabase(context).also(::validateDatabaseOpen)
+            }.getOrThrow()
+        }
+
+        private fun buildDatabase(context: Context): FieldbookDatabase {
+            ensureSqlCipherLoaded()
+            val passphrase = CryptoManager.getPassphrase(context).toByteArray()
+            val factory = SupportOpenHelperFactory(passphrase)
+
+            return Room.databaseBuilder(
+                context,
+                FieldbookDatabase::class.java,
+                DATABASE_NAME
+            )
+                .openHelperFactory(factory)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
+                )
+                .build()
+        }
+
+        private fun ensureSqlCipherLoaded() {
+            if (isSqlCipherLoaded) {
+                return
+            }
+
+            synchronized(this) {
+                if (!isSqlCipherLoaded) {
+                    System.loadLibrary(SQLCIPHER_LIBRARY_NAME)
+                    isSqlCipherLoaded = true
+                }
+            }
+        }
+
+        private fun validateDatabaseOpen(database: FieldbookDatabase): FieldbookDatabase {
+            database.openHelper.writableDatabase.query("SELECT count(*) FROM sqlite_master").close()
+            return database
+        }
+
+        private fun isRecoverableStorageFailure(error: Throwable): Boolean {
+            return error.causeSequence().any { cause ->
+                cause is GeneralSecurityException ||
+                    cause is SQLiteException ||
+                    cause.message?.contains("file is not a database", ignoreCase = true) == true ||
+                    cause.message?.contains("encrypted", ignoreCase = true) == true ||
+                    cause.message?.contains("decrypt", ignoreCase = true) == true ||
+                    cause.message?.contains("bad tag", ignoreCase = true) == true
+            }
+        }
+
+        private fun Throwable.causeSequence(): Sequence<Throwable> = sequence {
+            var current: Throwable? = this@causeSequence
+            while (current != null) {
+                yield(current)
+                current = current.cause
+            }
+        }
     }
 }

@@ -10,35 +10,52 @@ import java.io.IOException
 class AudioRecorder(private val context: Context) {
     private var mediaRecorder: MediaRecorder? = null
 
-    fun startRecording(outputFile: File) {
-        mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    fun startRecording(outputFile: File): Boolean {
+        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(context)
         } else {
             MediaRecorder()
-        }.apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOutputFile(outputFile.absolutePath)
+        }
 
-            try {
-                prepare()
-                start()
-            } catch (e: IOException) {
-                Log.e("AudioRecorder", "prepare() failed", e)
-            }
+        return try {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setOutputFile(outputFile.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            mediaRecorder = recorder
+            true
+        } catch (e: IOException) {
+            recorder.releaseSafely()
+            Log.e("AudioRecorder", "prepare() failed", e)
+            false
+        } catch (e: RuntimeException) {
+            recorder.releaseSafely()
+            Log.e("AudioRecorder", "startRecording() failed", e)
+            false
+        } catch (e: SecurityException) {
+            recorder.releaseSafely()
+            Log.e("AudioRecorder", "startRecording() denied", e)
+            false
         }
     }
 
-    fun stopRecording() {
-        mediaRecorder?.apply {
-            try {
-                stop()
-                release()
-            } catch (e: Exception) {
-                Log.e("AudioRecorder", "stop() failed", e)
-            }
+    fun stopRecording(): Boolean {
+        val recorder = mediaRecorder ?: return false
+        return try {
+            recorder.stop()
+            true
+        } catch (e: Exception) {
+            Log.e("AudioRecorder", "stop() failed", e)
+            false
+        } finally {
+            recorder.releaseSafely()
+            mediaRecorder = null
         }
-        mediaRecorder = null
     }
+}
+
+private fun MediaRecorder.releaseSafely() {
+    runCatching { release() }
 }
