@@ -125,6 +125,14 @@ class CaseDetailViewModel(
         }
     }
 
+    fun updateTranscription(attachmentId: Long, transcription: String) {
+        viewModelScope.launch {
+            runCatching { repository.updateTranscription(attachmentId, transcription) }
+                .onSuccess { messageState.value = "Transcription saved." }
+                .onFailure { messageState.value = it.message ?: "Could not save transcription." }
+        }
+    }
+
     fun deleteAttachment(attachmentId: Long) {
         viewModelScope.launch {
             runCatching { repository.deleteAttachment(attachmentId) }

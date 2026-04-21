@@ -31,5 +31,7 @@ data class CaseAttachmentEntity(
     val gpsLat: Double? = null,
     val gpsLon: Double? = null,
     val capturedAt: Long? = null,
-    val deviceModel: String? = null
+    val deviceModel: String? = null,
+    val fileHash: String? = null,
+    val transcription: String? = null
 )

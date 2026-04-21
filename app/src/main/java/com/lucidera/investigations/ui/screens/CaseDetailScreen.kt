@@ -1,11 +1,12 @@
 package com.lucidera.investigations.ui.screens
 
-import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
@@ -17,19 +18,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.DocumentScanner
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.lucidera.investigations.ui.components.AudioPlayer
+import com.lucidera.investigations.ui.components.AudioRecorder
+import java.util.UUID
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +61,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -61,6 +71,18 @@ import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.lucidera.investigations.R
 import com.lucidera.investigations.data.AttachmentDraft
 import com.lucidera.investigations.data.AttachmentType
@@ -76,6 +98,7 @@ import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.LeadEntity
 import com.lucidera.investigations.ui.components.DictationOutlinedTextField
+import com.lucidera.investigations.ui.components.LocationHelper
 import com.lucidera.investigations.ui.components.LucidEraBrandHeader
 import com.lucidera.investigations.ui.components.appendDictation
 import com.lucidera.investigations.ui.components.createSpeechIntent
@@ -85,6 +108,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -115,6 +139,11 @@ fun CaseDetailScreen(
     var attachmentToEdit by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     var attachmentToDelete by remember { mutableStateOf<CaseAttachmentEntity?>(null) }
     val context = LocalContext.current
+    var isRecording by remember { mutableStateOf(false) }
+    var audioFile by remember { mutableStateOf<File?>(null) }
+    val recorder = remember { AudioRecorder(context) }
+    val player = remember { AudioPlayer(context) }
+    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.userMessage) {
@@ -200,7 +229,8 @@ fun CaseDetailScreen(
                     gpsLat = exif.gpsLat,
                     gpsLon = exif.gpsLon,
                     capturedAt = exif.capturedAt,
-                    deviceModel = exif.deviceModel
+                    deviceModel = exif.deviceModel,
+                    fileHash = calculateFileHash(context, storedUri)
                 )
             } ?: Toast.makeText(context, "Could not store selected image.", Toast.LENGTH_LONG).show()
         }
@@ -218,11 +248,43 @@ fun CaseDetailScreen(
                     gpsLat = exif.gpsLat,
                     gpsLon = exif.gpsLon,
                     capturedAt = exif.capturedAt,
-                    deviceModel = exif.deviceModel
+                    deviceModel = exif.deviceModel,
+                    fileHash = calculateFileHash(context, uri)
                 )
             }
         }
     }
+    val scannerOptions = GmsDocumentScannerOptions.Builder()
+        .setGalleryImportAllowed(true)
+        .setResultFormats(RESULT_FORMAT_JPEG, RESULT_FORMAT_PDF)
+        .setScannerMode(SCANNER_MODE_FULL)
+        .build()
+    val scanner = GmsDocumentScanning.getClient(scannerOptions)
+    val scannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val scanningResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            scanningResult?.pages?.firstOrNull()?.let { page ->
+                val uri = page.imageUri
+                val exif = extractExifData(context, uri)
+                // Document scanner images are already optimized/cropped
+                pendingPhotoDraft = PendingPhotoDraft(
+                    uri = uri,
+                    attachmentType = AttachmentType.CAMERA, // Treat as camera/field capture
+                    mimeType = "image/jpeg",
+                    gpsLat = exif.gpsLat,
+                    gpsLon = exif.gpsLon,
+                    capturedAt = exif.capturedAt,
+                    deviceModel = exif.deviceModel,
+                    fileHash = calculateFileHash(context, uri)
+                )
+            }
+        }
+    }
+
+    var showMapDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
@@ -234,6 +296,12 @@ fun CaseDetailScreen(
                     }
                 },
                 actions = {
+                    val leadsWithLocation = state.leads.filter { it.latitude != null && it.longitude != null }
+                    if (leadsWithLocation.isNotEmpty()) {
+                        IconButton(onClick = { showMapDialog = true }) {
+                            Icon(Icons.Outlined.Map, contentDescription = "View Source Map")
+                        }
+                    }
                     TextButton(onClick = onOpenCases) {
                         Text("Cases")
                     }
@@ -263,22 +331,21 @@ fun CaseDetailScreen(
                             DropdownMenuItem(
                                 text = { Text("Export Case Package") },
                                 onClick = {
-                                    val fileName = CasePackageExporter.buildPackageFileName(caseItem)
                                     pendingPackageExport = ExportPackage(
                                         label = "Case package",
-                                        fileName = fileName,
+                                        fileName = "${caseItem.caseCode}_package.zip",
                                         markdownFileName = caseItem.masterNoteName,
                                         markdown = markdown,
                                         attachments = state.attachments
                                     )
                                     showOverflowMenu = false
-                                    packageExportLauncher.launch(fileName)
+                                    packageExportLauncher.launch("${caseItem.caseCode}_package.zip")
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text("Export Session Log") },
                                 onClick = {
-                                    val fileName = ObsidianMarkdownExporter.buildSessionLogFileName(caseItem)
+                                    val fileName = "Session_Log_${caseItem.caseCode}_${System.currentTimeMillis()}.md"
                                     pendingExport = ExportDocument(
                                         label = "Session log",
                                         fileName = fileName,
@@ -289,47 +356,15 @@ fun CaseDetailScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Share Case Note") },
-                                onClick = {
-                                    showOverflowMenu = false
-                                    MarkdownShareHelper.shareMarkdown(
-                                        context = context,
-                                        fileName = caseItem.masterNoteName,
-                                        markdown = markdown,
-                                        chooserTitle = "Share case note"
+                                text = {
+                                    Text(
+                                        "Delete Case",
+                                        color = MaterialTheme.colorScheme.error
                                     )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share Case Package") },
+                                },
                                 onClick = {
-                                    showOverflowMenu = false
-                                    MarkdownShareHelper.shareCasePackage(
-                                        context = context,
-                                        fileName = caseItem.masterNoteName,
-                                        markdown = markdown,
-                                        attachments = state.attachments,
-                                        chooserTitle = "Share case package"
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share Session Log") },
-                                onClick = {
-                                    showOverflowMenu = false
-                                    MarkdownShareHelper.shareMarkdown(
-                                        context = context,
-                                        fileName = ObsidianMarkdownExporter.buildSessionLogFileName(caseItem),
-                                        markdown = sessionLogMarkdown,
-                                        chooserTitle = "Share session log"
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete Case") },
-                                onClick = {
-                                    showOverflowMenu = false
                                     showDeleteDialog = true
+                                    showOverflowMenu = false
                                 }
                             )
                         }
@@ -419,6 +454,29 @@ fun CaseDetailScreen(
                     Button(
                         modifier = Modifier.weight(1f),
                         onClick = {
+                            scanner.getStartScanIntent(context as android.app.Activity)
+                                .addOnSuccessListener { intentSender ->
+                                    scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                                }
+                                .addOnFailureListener {
+                                    Toast.makeText(context, "Scanner failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        }
+                    ) {
+                        Icon(Icons.Outlined.DocumentScanner, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Scan Doc")
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
                             galleryPicker.launch(
                                 PickVisualMediaRequest(
                                     ActivityResultContracts.PickVisualMedia.ImageOnly
@@ -429,6 +487,82 @@ fun CaseDetailScreen(
                         Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Gallery")
+                    }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            if (!isRecording) {
+                                val file = File(context.cacheDir, "REC_${UUID.randomUUID()}.mp4")
+                                audioFile = file
+                                recorder.startRecording(file)
+                                isRecording = true
+                            } else {
+                                recorder.stopRecording()
+                                isRecording = false
+                                audioFile?.let { file ->
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                    pendingPhotoDraft = PendingPhotoDraft(
+                                        uri = uri,
+                                        attachmentType = AttachmentType.AUDIO,
+                                        mimeType = "audio/mp4",
+                                        gpsLat = null,
+                                        gpsLon = null,
+                                        capturedAt = System.currentTimeMillis(),
+                                        deviceModel = android.os.Build.MODEL,
+                                        fileHash = calculateFileHash(context, uri)
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        if (isRecording) {
+                            var seconds by remember { mutableStateOf(0) }
+                            var tick by remember { mutableStateOf(0) }
+                            LaunchedEffect(Unit) {
+                                while (true) {
+                                    kotlinx.coroutines.delay(200)
+                                    tick++
+                                    if (tick % 5 == 0) seconds++
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Outlined.Stop,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Row(
+                                    modifier = Modifier.height(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    for (i in 0 until 5) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(3.dp)
+                                                .fillMaxHeight(0.2f + (Math.random().toFloat() * 0.8f))
+                                                .background(MaterialTheme.colorScheme.error)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = java.util.Locale.getDefault().let { locale ->
+                                        String.format(locale, "%02d:%02d", seconds / 60, seconds % 60)
+                                    },
+                                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                )
+                            }
+                        } else {
+                            Icon(Icons.Outlined.Mic, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Record")
+                        }
                     }
                 }
             }
@@ -523,20 +657,34 @@ fun CaseDetailScreen(
                 }
             }
             items(state.attachments, key = { "attachment_${it.id}" }) { attachment ->
+                val speechLauncher = rememberSpeechToTextLauncher { text, _ ->
+                    viewModel.updateTranscription(attachment.id, text)
+                }
                 AttachmentCard(
                     attachment = attachment,
                     onEdit = { attachmentToEdit = attachment },
-                    onDelete = { attachmentToDelete = attachment }
+                    onDelete = { attachmentToDelete = attachment },
+                    onTranscribe = {
+                        speechLauncher.launch(createSpeechIntent())
+                    },
+                    onPlay = {
+                        player.playUri(Uri.parse(attachment.uri))
+                    }
                 )
             }
         }
     }
 
     if (showLeadDialog) {
+        val scope = rememberCoroutineScope()
         AddLeadDialog(
             onDismiss = { showLeadDialog = false },
             title = "Add Source",
-            onFetchArchive = viewModel::fetchArchiveUrl,
+            onFetchArchive = { url ->
+                scope.launch {
+                    viewModel.fetchArchiveUrl(url)
+                }
+            },
             onSave = {
                 viewModel.addLead(it)
                 showLeadDialog = false
@@ -557,10 +705,15 @@ fun CaseDetailScreen(
 
     val editingLead = leadToEdit
     if (editingLead != null) {
+        val scope = rememberCoroutineScope()
         AddLeadDialog(
             initialLead = editingLead,
             title = "Edit Source",
-            onFetchArchive = viewModel::fetchArchiveUrl,
+            onFetchArchive = { url ->
+                scope.launch {
+                    viewModel.fetchArchiveUrl(url)
+                }
+            },
             onDismiss = { leadToEdit = null },
             onSave = {
                 viewModel.updateLead(editingLead, it)
@@ -628,6 +781,53 @@ fun CaseDetailScreen(
         )
     }
 
+    if (showMapDialog) {
+        val leadsWithLocation = state.leads.filter { it.latitude != null && it.longitude != null }
+        if (leadsWithLocation.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { showMapDialog = false },
+                confirmButton = {
+                    TextButton(onClick = { showMapDialog = false }) {
+                        Text("Close")
+                    }
+                },
+                title = { Text("Source Geocoordinates") },
+                text = {
+                    val firstLoc = leadsWithLocation.first()
+                    val cameraPositionState = rememberCameraPositionState {
+                        position = CameraPosition.fromLatLngZoom(
+                            LatLng(firstLoc.latitude!!, firstLoc.longitude!!),
+                            12f
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp)
+                    ) {
+                        GoogleMap(
+                            modifier = Modifier.fillMaxSize(),
+                            cameraPositionState = cameraPositionState
+                        ) {
+                            leadsWithLocation.forEach { lead ->
+                                Marker(
+                                    state = MarkerState(
+                                        position = LatLng(
+                                            lead.latitude!!,
+                                            lead.longitude!!
+                                        )
+                                    ),
+                                    title = lead.sourceName,
+                                    snippet = lead.summary
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -670,7 +870,8 @@ fun CaseDetailScreen(
                         gpsLat = pending.gpsLat,
                         gpsLon = pending.gpsLon,
                         capturedAt = pending.capturedAt,
-                        deviceModel = pending.deviceModel
+                        deviceModel = pending.deviceModel,
+                        fileHash = pending.fileHash
                     )
                 )
                 pendingPhotoDraft = null
@@ -747,6 +948,9 @@ private fun LeadCard(
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
+            if (lead.latitude != null && lead.longitude != null) {
+                Text("GPS: ${lead.latitude}, ${lead.longitude}", style = MaterialTheme.typography.bodySmall)
+            }
             ActionChipRow {
                 TextButton(onClick = onVerify) {
                     Text("Mark Verified")
@@ -780,7 +984,7 @@ private fun EntityCard(
         ) {
             Text(entity.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "${entity.entityType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${entity.confidence.name.lowercase().replaceFirstChar(Char::uppercase)}",
+                "${entity.entityType.name.lowercase().replaceFirstChar(Char::uppercase)} \u00b7 ${entity.confidence.name.lowercase().replaceFirstChar(Char::uppercase)}",
                 color = if (entity.confidence == ConfidenceLevel.VERIFIED) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
@@ -814,76 +1018,105 @@ private fun EntityCard(
 private fun AttachmentCard(
     attachment: CaseAttachmentEntity,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onTranscribe: () -> Unit,
+    onPlay: () -> Unit
 ) {
     Card {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            AsyncImage(
-                model = attachment.uri,
-                contentDescription = attachment.caption.ifBlank { attachment.fileName },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentScale = ContentScale.Crop,
-                error = painterResource(id = R.drawable.lucid_era_logo),
-                placeholder = painterResource(id = R.drawable.lucid_era_logo)
-            )
+            if (attachment.attachmentType != AttachmentType.AUDIO) {
+                AsyncImage(
+                    model = attachment.uri,
+                    contentDescription = attachment.caption.ifBlank { attachment.fileName },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    contentScale = ContentScale.Crop,
+                    error = painterResource(id = R.drawable.lucid_era_logo),
+                    placeholder = painterResource(id = R.drawable.lucid_era_logo)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Text(attachment.fileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             if (attachment.caption.isNotBlank()) {
                 Text(attachment.caption)
             }
+            if (!attachment.transcription.isNullOrBlank()) {
+                Text(
+                    text = "Transcription:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = attachment.transcription,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
             Text(
                 "Captured via: ${attachment.attachmentType.name.lowercase().replaceFirstChar(Char::uppercase)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodySmall
             )
-            if (attachment.mimeType.isNotBlank()) {
+            if (attachment.fileHash != null) {
                 Text(
-                    "Type: ${attachment.mimeType}",
+                    "SHA-256: ${attachment.fileHash.take(16)}...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Text("Saved: ${formatDate(attachment.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            if (attachment.capturedAt != null) {
+                Text("Image date: ${formatDate(attachment.capturedAt)}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (attachment.deviceModel != null) {
+                Text("Device: ${attachment.deviceModel}", style = MaterialTheme.typography.bodySmall)
             }
             if (attachment.gpsLat != null && attachment.gpsLon != null) {
-                Text(
-                    "GPS: ${"%.6f".format(attachment.gpsLat)}, ${"%.6f".format(attachment.gpsLon)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (attachment.capturedAt != null) {
-                Text(
-                    "Captured: ${formatDateTime(attachment.capturedAt)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text("GPS: ${attachment.gpsLat}, ${attachment.gpsLon}", style = MaterialTheme.typography.bodySmall)
             }
             ActionChipRow {
+                if (attachment.attachmentType == AttachmentType.AUDIO) {
+                    TextButton(onClick = onPlay) {
+                        Text("Play")
+                    }
+                    TextButton(onClick = onTranscribe) {
+                        Text(if (attachment.transcription.isNullOrBlank()) "Transcribe" else "Re-transcribe")
+                    }
+                }
                 TextButton(onClick = onEdit) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null)
-                    Text(" Edit")
+                    Text("Edit Caption")
                 }
                 TextButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null)
-                    Text(" Delete")
+                    Text("Delete")
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActionChipRow(
-    content: @Composable () -> Unit
-) {
+private fun ActionChipRow(content: @Composable () -> Unit) {
+    @OptIn(ExperimentalLayoutApi::class)
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         content()
     }
@@ -893,46 +1126,126 @@ private fun ActionChipRow(
 private fun AddLeadDialog(
     initialLead: LeadEntity? = null,
     title: String,
-    onFetchArchive: suspend (String) -> String?,
+    onFetchArchive: (String) -> Unit,
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
 ) {
-    var sourceName by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceName.orEmpty()) }
-    var sourceUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.sourceUrl.orEmpty()) }
-    var archiveUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl.orEmpty()) }
-    var tags by remember(initialLead?.id) { mutableStateOf(initialLead?.tags.orEmpty()) }
-    var summary by remember(initialLead?.id) { mutableStateOf(initialLead?.summary.orEmpty()) }
-    var isFetchingArchive by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var sourceName by remember { mutableStateOf(initialLead?.sourceName ?: "") }
+    var summary by remember { mutableStateOf(initialLead?.summary ?: "") }
+    var sourceUrl by remember { mutableStateOf(initialLead?.sourceUrl ?: "") }
+    var archiveUrl by remember { mutableStateOf(initialLead?.archiveUrl ?: "") }
+    var tags by remember { mutableStateOf(initialLead?.tags ?: "") }
+    var status by remember { mutableStateOf(initialLead?.status ?: LeadStatus.OPEN) }
+    var latitude by remember { mutableStateOf(initialLead?.latitude) }
+    var longitude by remember { mutableStateOf(initialLead?.longitude) }
+    var isLocating by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
-    var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
-    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
-        when (dictationTarget) {
-            DictationTarget.LEAD_URL -> sourceUrl = appendDictation(sourceUrl, result)
-            DictationTarget.LEAD_ARCHIVE_URL -> archiveUrl = appendDictation(archiveUrl, result)
-            DictationTarget.LEAD_SUMMARY -> summary = appendDictation(summary, result)
-            DictationTarget.LEAD_NAME -> sourceName = appendDictation(sourceName, result)
-            else -> Unit
+    val scope = rememberCoroutineScope()
+
+    val speechLauncher = rememberSpeechToTextLauncher { text, target ->
+        when (target as? DictationTarget) {
+            DictationTarget.LEAD_NAME -> sourceName = appendDictation(sourceName, text)
+            DictationTarget.LEAD_SUMMARY -> summary = appendDictation(summary, text)
+            DictationTarget.LEAD_URL -> sourceUrl = appendDictation(sourceUrl, text)
+            DictationTarget.LEAD_ARCHIVE_URL -> archiveUrl = appendDictation(archiveUrl, text)
+            else -> {}
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DictationOutlinedTextField(
+                    value = sourceName,
+                    onValueChange = { sourceName = it },
+                    label = { Text("Source Name") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.LEAD_NAME) }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = { Text("Summary/Key Takeaway") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.LEAD_SUMMARY) }
+                )
+                DictationOutlinedTextField(
+                    value = sourceUrl,
+                    onValueChange = { sourceUrl = it },
+                    label = { Text("Source URL") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.LEAD_URL) }
+                )
+                if (sourceUrl.isNotBlank()) {
+                    TextButton(onClick = { onFetchArchive(sourceUrl) }) {
+                        Text("Check Wayback Machine")
+                    }
+                }
+                DictationOutlinedTextField(
+                    value = archiveUrl,
+                    onValueChange = { archiveUrl = it },
+                    label = { Text("Archive URL") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.LEAD_ARCHIVE_URL) }
+                )
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags (comma separated)") }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isLocating) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        IconButton(onClick = {
+                            scope.launch {
+                                isLocating = true
+                                val loc = LocationHelper.getCurrentLocation(context)
+                                if (loc != null) {
+                                    latitude = loc.latitude
+                                    longitude = loc.longitude
+                                } else {
+                                    Toast.makeText(context, "Could not acquire location.", Toast.LENGTH_SHORT).show()
+                                }
+                                isLocating = false
+                            }
+                        }) {
+                            Icon(Icons.Outlined.MyLocation, contentDescription = "Tag current location")
+                        }
+                    }
+                    Column {
+                        if (latitude != null && longitude != null) {
+                            Text("Location: ${latitude?.toString()?.take(8)}, ${longitude?.toString()?.take(8)}",
+                                style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { latitude = null; longitude = null }) {
+                                Text("Clear location", style = MaterialTheme.typography.labelSmall)
+                            }
+                        } else {
+                            Text("No location tagged", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
-                    onSave(
-                        LeadDraft(
-                            sourceName = sourceName,
-                            sourceUrl = sourceUrl,
-                            archiveUrl = archiveUrl,
-                            tags = tags,
-                            summary = summary,
-                            status = LeadStatus.OPEN
-                        )
-                    )
+                    onSave(LeadDraft(
+                        sourceName = sourceName,
+                        summary = summary,
+                        sourceUrl = sourceUrl,
+                        archiveUrl = archiveUrl,
+                        status = status,
+                        tags = tags,
+                        latitude = latitude,
+                        longitude = longitude
+                    ))
                 },
-                enabled = sourceName.isNotBlank() && sourceUrl.isNotBlank() && summary.isNotBlank()
+                enabled = sourceName.isNotBlank() && summary.isNotBlank()
             ) {
                 Text("Save")
             }
@@ -940,74 +1253,6 @@ private fun AddLeadDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
-            }
-        },
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                DictationOutlinedTextField(
-                    value = sourceName,
-                    onValueChange = { sourceName = it },
-                    label = "Source name",
-                    onDictate = {
-                        dictationTarget = DictationTarget.LEAD_NAME
-                        speechLauncher.launch(createSpeechIntent())
-                    }
-                )
-                DictationOutlinedTextField(
-                    value = sourceUrl,
-                    onValueChange = { sourceUrl = it },
-                    label = "Source URL",
-                    onDictate = {
-                        dictationTarget = DictationTarget.LEAD_URL
-                        speechLauncher.launch(createSpeechIntent())
-                    }
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    DictationOutlinedTextField(
-                        value = archiveUrl,
-                        onValueChange = { archiveUrl = it },
-                        label = "Archive URL",
-                        modifier = Modifier.weight(1f),
-                        onDictate = {
-                            dictationTarget = DictationTarget.LEAD_ARCHIVE_URL
-                            speechLauncher.launch(createSpeechIntent())
-                        }
-                    )
-                    IconButton(
-                        onClick = {
-                            if (sourceUrl.isNotBlank() && !isFetchingArchive) {
-                                isFetchingArchive = true
-                                scope.launch {
-                                    val result = onFetchArchive(sourceUrl)
-                                    if (result != null) archiveUrl = result
-                                    else Toast.makeText(context, "No archive found.", Toast.LENGTH_SHORT).show()
-                                    isFetchingArchive = false
-                                }
-                            }
-                        },
-                        enabled = sourceUrl.isNotBlank() && !isFetchingArchive
-                    ) {
-                        Icon(Icons.Outlined.DownloadDone, contentDescription = "Fetch archive URL")
-                    }
-                }
-                DictationOutlinedTextField(
-                    value = summary,
-                    onValueChange = { summary = it },
-                    label = "Summary",
-                    onDictate = {
-                        dictationTarget = DictationTarget.LEAD_SUMMARY
-                        speechLauncher.launch(createSpeechIntent())
-                    }
-                )
-                OutlinedTextField(
-                    value = tags,
-                    onValueChange = { tags = it },
-                    label = { Text("Tags") }
-                )
             }
         }
     )
@@ -1020,43 +1265,78 @@ private fun AddEntityDialog(
     onDismiss: () -> Unit,
     onSave: (EntityDraft) -> Unit
 ) {
-    var name by remember(initialEntity?.id) { mutableStateOf(initialEntity?.name.orEmpty()) }
-    var entityType by remember(initialEntity?.id) {
-        mutableStateOf(initialEntity?.entityType ?: EntityType.ORGANIZATION)
-    }
-    var confidence by remember(initialEntity?.id) {
-        mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.PROBABLE)
-    }
-    var aliases by remember(initialEntity?.id) { mutableStateOf(initialEntity?.aliases.orEmpty()) }
-    var summary by remember(initialEntity?.id) { mutableStateOf(initialEntity?.summary.orEmpty()) }
-    var identifier by remember(initialEntity?.id) {
-        mutableStateOf(initialEntity?.identifier?.ifBlank { "Unknown" } ?: "Unknown")
-    }
-    val context = LocalContext.current
-    var dictationTarget by remember { mutableStateOf(DictationTarget.ENTITY_SUMMARY) }
-    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
-        when (dictationTarget) {
-            DictationTarget.ENTITY_NAME -> name = appendDictation(name, result)
-            DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, result)
-            else -> Unit
+    var name by remember { mutableStateOf(initialEntity?.name ?: "") }
+    var entityType by remember { mutableStateOf(initialEntity?.entityType ?: EntityType.PERSON) }
+    var confidence by remember { mutableStateOf(initialEntity?.confidence ?: ConfidenceLevel.UNCONFIRMED) }
+    var summary by remember { mutableStateOf(initialEntity?.summary ?: "") }
+    var identifier by remember { mutableStateOf(initialEntity?.identifier ?: "") }
+    var aliases by remember { mutableStateOf(initialEntity?.aliases ?: "") }
+
+    val speechLauncher = rememberSpeechToTextLauncher { text, target ->
+        when (target as? DictationTarget) {
+            DictationTarget.ENTITY_NAME -> name = appendDictation(name, text)
+            DictationTarget.ENTITY_SUMMARY -> summary = appendDictation(summary, text)
+            DictationTarget.ENTITY_IDENTIFIER -> identifier = appendDictation(identifier, text)
+            else -> {}
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DictationOutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name/Entity Title") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.ENTITY_NAME) }
+                )
+                OutlinedTextField(
+                    value = aliases,
+                    onValueChange = { aliases = it },
+                    label = { Text("Aliases (comma separated)") }
+                )
+                DictationOutlinedTextField(
+                    value = identifier,
+                    onValueChange = { identifier = it },
+                    label = { Text("Unique Identifier (SSN, VIN, ID, etc.)") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.ENTITY_IDENTIFIER) }
+                )
+                DictationOutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = { Text("Summary") },
+                    onDictate = { speechLauncher.launch(createSpeechIntent(), DictationTarget.ENTITY_SUMMARY) }
+                )
+                Text("Type", style = MaterialTheme.typography.labelMedium)
+                ActionChipRow {
+                    EntityType.entries.forEach { type ->
+                        TextButton(onClick = { entityType = type }) {
+                            Text(
+                                type.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (entityType == type) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Text("Confidence", style = MaterialTheme.typography.labelMedium)
+                ActionChipRow {
+                    ConfidenceLevel.entries.forEach { level ->
+                        TextButton(onClick = { confidence = level }) {
+                            Text(
+                                level.name.lowercase().replaceFirstChar(Char::uppercase),
+                                color = if (confidence == level) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
-                    onSave(
-                        EntityDraft(
-                            name = name,
-                            entityType = entityType,
-                            confidence = confidence,
-                            aliases = aliases,
-                            summary = summary,
-                            identifier = identifier
-                        )
-                    )
+                    onSave(EntityDraft(name, entityType, confidence, summary, identifier, aliases))
                 },
                 enabled = name.isNotBlank() && summary.isNotBlank()
             ) {
@@ -1066,74 +1346,6 @@ private fun AddEntityDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
-            }
-        },
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                DictationOutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = "Name",
-                    onDictate = {
-                        dictationTarget = DictationTarget.ENTITY_NAME
-                        speechLauncher.launch(createSpeechIntent())
-                    }
-                )
-                ActionChipRow {
-                    EntityType.entries.forEach { type ->
-                        TextButton(onClick = { entityType = type }) {
-                            Text(
-                                text = type.name.lowercase().replaceFirstChar(Char::uppercase),
-                                color = if (entityType == type) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    }
-                }
-                ActionChipRow {
-                    ConfidenceLevel.entries.forEach { level ->
-                        TextButton(onClick = { confidence = level }) {
-                            Text(
-                                text = level.name.lowercase().replaceFirstChar(Char::uppercase),
-                                color = if (confidence == level) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    }
-                }
-                Text("Role", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ActionChipRow {
-                    listOf("Unknown", "Primary Subject", "Person of Interest", "Associate", "Witness", "Source", "Suspect", "Vehicle", "Location", "Organization").forEach { role ->
-                        TextButton(onClick = { identifier = role }) {
-                            Text(
-                                role,
-                                color = if (identifier == role) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = aliases,
-                    onValueChange = { aliases = it },
-                    label = { Text("Aliases") }
-                )
-                DictationOutlinedTextField(
-                    value = summary,
-                    onValueChange = { summary = it },
-                    label = "Summary",
-                    onDictate = {
-                        dictationTarget = DictationTarget.ENTITY_SUMMARY
-                        speechLauncher.launch(createSpeechIntent())
-                    }
-                )
             }
         }
     )
@@ -1145,32 +1357,24 @@ private fun AddPhotoCaptionDialog(
     onSave: (String) -> Unit
 ) {
     var caption by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
-        caption = appendDictation(caption, result)
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
+        title = { Text("Add Photo Caption") },
+        text = {
+            OutlinedTextField(
+                value = caption,
+                onValueChange = { caption = it },
+                label = { Text("Caption") }
+            )
+        },
         confirmButton = {
-            TextButton(onClick = { onSave(caption) }) {
-                Text("Save")
+            Button(onClick = { onSave(caption) }) {
+                Text("Save Photo")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
-            }
-        },
-        title = { Text("Add Photo Caption") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                DictationOutlinedTextField(
-                    value = caption,
-                    onValueChange = { caption = it },
-                    label = "Caption or note",
-                    onDictate = { speechLauncher.launch(createSpeechIntent()) }
-                )
             }
         }
     )
@@ -1182,64 +1386,48 @@ private fun EditAttachmentDialog(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    var caption by remember(attachment.id) { mutableStateOf(attachment.caption) }
-
+    var caption by remember { mutableStateOf(attachment.caption) }
     AlertDialog(
         onDismissRequest = onDismiss,
+        title = { Text("Edit Caption") },
+        text = {
+            OutlinedTextField(
+                value = caption,
+                onValueChange = { caption = it },
+                label = { Text("Caption") }
+            )
+        },
         confirmButton = {
-            TextButton(onClick = { onSave(caption) }) {
-                Text("Save")
+            Button(onClick = { onSave(caption) }) {
+                Text("Save Changes")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        },
-        title = { Text("Edit Attachment") },
-        text = {
-            OutlinedTextField(
-                value = caption,
-                onValueChange = { caption = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Caption or note") }
-            )
         }
     )
 }
 
-private fun formatDate(timestamp: Long): String =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd")
+private fun formatDate(millis: Long): String {
+    val instant = Instant.ofEpochMilli(millis)
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         .withZone(ZoneId.systemDefault())
-        .format(Instant.ofEpochMilli(timestamp))
-
-private fun formatDateTime(timestamp: Long): String =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.ofEpochMilli(timestamp))
-
-private fun createCaseImageFile(context: android.content.Context): File {
-    val dir = File(context.filesDir, "case_images").apply { mkdirs() }
-    return File(dir, "case_${System.currentTimeMillis()}.jpg")
+    return formatter.format(instant)
 }
 
-private fun persistGalleryImage(
-    context: android.content.Context,
-    sourceUri: Uri
-): Uri? {
-    val extension = sourceUri
-        .lastPathSegment
-        ?.substringAfterLast('.', "")
-        ?.takeIf { it.isNotBlank() }
-        ?: "jpg"
-    val targetFile = File(
-        File(context.filesDir, "case_images").apply { mkdirs() },
-        "gallery_${System.currentTimeMillis()}.$extension"
-    )
+private fun createCaseImageFile(context: android.content.Context): File {
+    val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
+    return File.createTempFile("IMG_", ".jpg", dir)
+}
 
+private fun persistGalleryImage(context: android.content.Context, uri: Uri): Uri? {
+    val fileName = "GALLERY_${System.currentTimeMillis()}.jpg"
+    val targetFile = File(context.getExternalFilesDir(null), fileName)
     return runCatching {
-        context.contentResolver.openInputStream(sourceUri).useToCopy(targetFile)
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", targetFile)
+        context.contentResolver.openInputStream(uri).useToCopy(targetFile)
+        Uri.fromFile(targetFile)
     }.getOrNull()
 }
 
@@ -1259,7 +1447,8 @@ private data class PendingPhotoDraft(
     val gpsLat: Double? = null,
     val gpsLon: Double? = null,
     val capturedAt: Long? = null,
-    val deviceModel: String? = null
+    val deviceModel: String? = null,
+    val fileHash: String? = null
 ) {
     val fileName: String = uri.lastPathSegment?.substringAfterLast('/') ?: "case_attachment.jpg"
 }
@@ -1271,13 +1460,25 @@ private data class ExifData(
     val deviceModel: String?
 )
 
+private fun calculateFileHash(context: android.content.Context, uri: Uri): String? = runCatching {
+    val digest = MessageDigest.getInstance("SHA-256")
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        val buffer = ByteArray(8192)
+        var bytesRead: Int
+        while (input.read(buffer).also { bytesRead = it } != -1) {
+            digest.update(buffer, 0, bytesRead)
+        }
+    }
+    digest.digest().joinToString("") { "%02x".format(it) }
+}.getOrNull()
+
 private fun extractExifData(context: android.content.Context, uri: Uri): ExifData {
     return runCatching {
         context.contentResolver.openInputStream(uri)?.use { stream ->
             val exif = ExifInterface(stream)
             val latLon = exif.latLong
-            val gpsLat = latLon?.getOrNull(0)?.toDouble()
-            val gpsLon = latLon?.getOrNull(1)?.toDouble()
+            val gpsLat = latLon?.getOrNull(0)
+            val gpsLon = latLon?.getOrNull(1)
             val dateTimeStr = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
                 ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
             val capturedAt = dateTimeStr?.let { parseExifDateTime(it) }
@@ -1294,7 +1495,7 @@ private fun resolveMimeType(
 
 private fun parseExifDateTime(dateTimeStr: String): Long? =
     runCatching {
-        val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+        val formatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
         java.time.LocalDateTime.parse(dateTimeStr, formatter)
             .atZone(ZoneId.systemDefault())
             .toInstant()

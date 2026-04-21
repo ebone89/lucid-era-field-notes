@@ -28,5 +28,7 @@ data class LeadEntity(
     val tags: String = "",
     val summary: String,
     val status: LeadStatus,
-    val collectedAt: Long = System.currentTimeMillis()
+    val collectedAt: Long = System.currentTimeMillis(),
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )

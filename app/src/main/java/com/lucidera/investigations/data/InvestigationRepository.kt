@@ -190,7 +190,9 @@ class InvestigationRepository(
                 archiveUrl = draft.archiveUrl,
                 tags = draft.tags,
                 summary = draft.summary,
-                status = draft.status
+                status = draft.status,
+                latitude = draft.latitude,
+                longitude = draft.longitude
             )
         )
     }
@@ -203,7 +205,9 @@ class InvestigationRepository(
                 archiveUrl = draft.archiveUrl,
                 tags = draft.tags,
                 summary = draft.summary,
-                status = draft.status
+                status = draft.status,
+                latitude = draft.latitude,
+                longitude = draft.longitude
             )
         )
     }
@@ -263,13 +267,18 @@ class InvestigationRepository(
                 gpsLat = draft.gpsLat,
                 gpsLon = draft.gpsLon,
                 capturedAt = draft.capturedAt,
-                deviceModel = draft.deviceModel
+                deviceModel = draft.deviceModel,
+                fileHash = draft.fileHash
             )
         )
     }
 
     suspend fun updateAttachmentCaption(attachmentId: Long, caption: String) {
         attachmentDao.updateAttachmentCaption(attachmentId, caption)
+    }
+
+    suspend fun updateTranscription(attachmentId: Long, transcription: String) {
+        attachmentDao.updateTranscription(attachmentId, transcription)
     }
 
     suspend fun deleteAttachment(attachmentId: Long) {
@@ -312,7 +321,9 @@ data class LeadDraft(
     val archiveUrl: String,
     val tags: String = "",
     val summary: String,
-    val status: LeadStatus = LeadStatus.OPEN
+    val status: LeadStatus = LeadStatus.OPEN,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class EntityDraft(
@@ -333,5 +344,6 @@ data class AttachmentDraft(
     val gpsLat: Double? = null,
     val gpsLon: Double? = null,
     val capturedAt: Long? = null,
-    val deviceModel: String? = null
+    val deviceModel: String? = null,
+    val fileHash: String? = null
 )

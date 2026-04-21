@@ -16,6 +16,9 @@ interface AttachmentDao {
     @Query("UPDATE case_attachments SET caption = :caption WHERE id = :attachmentId")
     suspend fun updateAttachmentCaption(attachmentId: Long, caption: String)
 
+    @Query("UPDATE case_attachments SET transcription = :transcription WHERE id = :attachmentId")
+    suspend fun updateTranscription(attachmentId: Long, transcription: String)
+
     @Query("DELETE FROM case_attachments WHERE id = :attachmentId")
     suspend fun deleteAttachment(attachmentId: Long)
 

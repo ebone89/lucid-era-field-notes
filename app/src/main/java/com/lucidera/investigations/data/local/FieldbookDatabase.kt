@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import net.zetetic.database.sqlcipher.SupportFactory
 import com.lucidera.investigations.data.local.entity.CaseAttachmentEntity
 import com.lucidera.investigations.data.local.entity.EntityProfileEntity
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
@@ -14,7 +15,7 @@ import com.lucidera.investigations.data.local.entity.LeadEntity
 
 @Database(
     entities = [InvestigationCaseEntity::class, LeadEntity::class, EntityProfileEntity::class, CaseAttachmentEntity::class],
-    version = 6,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -77,14 +78,38 @@ abstract class FieldbookDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE case_attachments ADD COLUMN fileHash TEXT")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE case_attachments ADD COLUMN transcription TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): FieldbookDatabase =
             INSTANCE ?: synchronized(this) {
+                val passphrase = CryptoManager.getPassphrase(context).toByteArray()
+                val factory = SupportFactory(passphrase)
+                
                 Room.databaseBuilder(
                     context.applicationContext,
                     FieldbookDatabase::class.java,
                     "fieldbook.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .openHelperFactory(factory)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
+                    )
                     .build()
                     .also { INSTANCE = it }
             }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.speech.RecognizerIntent
 import android.widget.Toast
+import androidx.activity.compose.ManagedActivityResultLauncher
+import androidx.activity.result.ActivityResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
@@ -13,23 +15,48 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import java.io.Serializable
 import java.util.Locale
+
+class SpeechToTextLauncher(
+    private val launcher: ManagedActivityResultLauncher<Intent, ActivityResult>,
+    private val onTagSet: (Any?) -> Unit
+) {
+    fun launch(intent: Intent, tag: Any? = null) {
+        onTagSet(tag)
+        launcher.launch(intent)
+    }
+}
 
 @Composable
 fun rememberSpeechToTextLauncher(
-    context: Context,
-    onResult: (String) -> Unit
-) = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-    if (result.resultCode == android.app.Activity.RESULT_OK) {
-        val spoken = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-        if (!spoken.isNullOrBlank()) {
-            onResult(spoken)
-        } else {
-            Toast.makeText(context, "No speech captured.", Toast.LENGTH_SHORT).show()
+    onResult: (String, Any?) -> Unit
+): SpeechToTextLauncher {
+    val context = LocalContext.current
+    var pendingTag by remember { mutableStateOf<Any?>(null) }
+    
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val spoken = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                onResult(spoken, pendingTag)
+            } else {
+                Toast.makeText(context, "No speech captured.", Toast.LENGTH_SHORT).show()
+            }
         }
+        pendingTag = null
+    }
+
+    return remember(launcher) {
+        SpeechToTextLauncher(launcher) { pendingTag = it }
     }
 }
 
@@ -47,20 +74,20 @@ fun appendDictation(existing: String, incoming: String): String =
 fun DictationOutlinedTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
     onDictate: () -> Unit,
     modifier: Modifier = Modifier,
+    label: @Composable (() -> Unit)? = null,
     singleLine: Boolean = false
 ) {
     OutlinedTextField(
         modifier = modifier,
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
+        label = label,
         singleLine = singleLine,
         trailingIcon = {
             IconButton(onClick = onDictate) {
-                Icon(Icons.Outlined.Mic, contentDescription = "Dictate $label")
+                Icon(Icons.Outlined.Mic, contentDescription = "Dictate")
             }
         }
     )

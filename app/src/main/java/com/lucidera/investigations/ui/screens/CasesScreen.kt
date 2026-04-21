@@ -10,18 +10,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -42,8 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,12 +49,15 @@ import com.lucidera.investigations.data.CaseDraft
 import com.lucidera.investigations.data.CaseStatus
 import com.lucidera.investigations.data.import.ObsidianCaseImporter
 import com.lucidera.investigations.data.local.entity.InvestigationCaseEntity
-import com.lucidera.investigations.ui.components.LucidEraBrandHeader
 import com.lucidera.investigations.ui.components.DictationOutlinedTextField
+import com.lucidera.investigations.ui.components.LucidEraBrandHeader
 import com.lucidera.investigations.ui.components.appendDictation
 import com.lucidera.investigations.ui.components.createSpeechIntent
 import com.lucidera.investigations.ui.components.rememberSpeechToTextLauncher
 import com.lucidera.investigations.ui.viewmodel.CasesViewModel
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private enum class CaseSortOrder { DATE_DESC, DATE_ASC, CODE }
 
@@ -202,8 +203,8 @@ fun CasesScreen(
         AddCaseDialog(
             nextCaseCode = nextCaseCode(state.cases),
             onDismiss = { showDialog = false },
-            onSave = {
-                viewModel.addCase(it)
+            onSave = { draft ->
+                viewModel.addCase(draft)
                 showDialog = false
             }
         )
@@ -234,8 +235,16 @@ private fun CaseCard(
             Text("Primary subject: ${caseItem.primarySubject}", style = MaterialTheme.typography.bodySmall)
             Text("Folder: ${caseItem.caseFolderName}", style = MaterialTheme.typography.bodySmall)
             Text("Status: ${caseItem.status.name.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.bodySmall)
+            Text("Logged: ${formatDate(caseItem.createdAt)}", style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+private fun formatDate(millis: Long): String {
+    val instant = Instant.ofEpochMilli(millis)
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        .withZone(ZoneId.systemDefault())
+    return formatter.format(instant)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -257,10 +266,8 @@ private fun AddCaseDialog(
     var savePath by remember { mutableStateOf("") }
     var showAdvanced by remember { mutableStateOf(false) }
     var publicationThreshold by remember { mutableStateOf("Wait until the key claim holds up across at least three solid, independent sources.") }
-    val context = LocalContext.current
-    var dictationTarget by remember { mutableStateOf(CaseDictationTarget.CASE_CODE) }
-    val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
-        when (dictationTarget) {
+    val speechLauncher = rememberSpeechToTextLauncher { result, target ->
+        when (target as? CaseDictationTarget) {
             CaseDictationTarget.CASE_CODE -> caseCode = appendDictation(caseCode, result)
             CaseDictationTarget.TITLE -> title = appendDictation(title, result)
             CaseDictationTarget.SUMMARY -> summary = appendDictation(summary, result)
@@ -272,6 +279,7 @@ private fun AddCaseDialog(
             CaseDictationTarget.CASE_FOLDER -> caseFolderName = appendDictation(caseFolderName, result)
             CaseDictationTarget.MASTER_NOTE -> masterNoteName = appendDictation(masterNoteName, result)
             CaseDictationTarget.SAVE_PATH -> savePath = appendDictation(savePath, result)
+            else -> {}
         }
     }
 
@@ -319,74 +327,66 @@ private fun AddCaseDialog(
                 DictationOutlinedTextField(
                     value = caseCode,
                     onValueChange = { caseCode = it },
-                    label = "Case code",
+                    label = { Text("Case code") },
                     singleLine = true,
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.CASE_CODE
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.CASE_CODE)
                     }
                 )
                 DictationOutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = "Title",
+                    label = { Text("Title") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.TITLE
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.TITLE)
                     }
                 )
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Summary so far",
+                    label = { Text("Summary so far") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.SUMMARY
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.SUMMARY)
                     }
                 )
                 DictationOutlinedTextField(
                     value = essentialQuestion,
                     onValueChange = { essentialQuestion = it },
-                    label = "Essential question",
+                    label = { Text("Essential question") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.ESSENTIAL_QUESTION
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.ESSENTIAL_QUESTION)
                     }
                 )
                 DictationOutlinedTextField(
                     value = primarySubject,
                     onValueChange = { primarySubject = it },
-                    label = "Primary subject",
+                    label = { Text("Primary subject") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.PRIMARY_SUBJECT
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.PRIMARY_SUBJECT)
                     }
                 )
                 DictationOutlinedTextField(
                     value = classification,
                     onValueChange = { classification = it },
-                    label = "Classification",
+                    label = { Text("Classification") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.CLASSIFICATION
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.CLASSIFICATION)
                     }
                 )
                 DictationOutlinedTextField(
                     value = leadInvestigator,
                     onValueChange = { leadInvestigator = it },
-                    label = "Lead",
+                    label = { Text("Lead") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.LEAD
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.LEAD)
                     }
                 )
                 DictationOutlinedTextField(
                     value = publicationThreshold,
                     onValueChange = { publicationThreshold = it },
-                    label = "Ready to publish when",
+                    label = { Text("Ready to publish when") },
                     onDictate = {
-                        dictationTarget = CaseDictationTarget.PUBLICATION_THRESHOLD
-                        speechLauncher.launch(createSpeechIntent())
+                        speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.PUBLICATION_THRESHOLD)
                     }
                 )
                 TextButton(onClick = { showAdvanced = !showAdvanced }) {
@@ -396,28 +396,25 @@ private fun AddCaseDialog(
                     DictationOutlinedTextField(
                         value = caseFolderName,
                         onValueChange = { caseFolderName = it },
-                        label = "Case folder",
+                        label = { Text("Case folder") },
                         onDictate = {
-                            dictationTarget = CaseDictationTarget.CASE_FOLDER
-                            speechLauncher.launch(createSpeechIntent())
+                            speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.CASE_FOLDER)
                         }
                     )
                     DictationOutlinedTextField(
                         value = masterNoteName,
                         onValueChange = { masterNoteName = it },
-                        label = "Master note",
+                        label = { Text("Master note") },
                         onDictate = {
-                            dictationTarget = CaseDictationTarget.MASTER_NOTE
-                            speechLauncher.launch(createSpeechIntent())
+                            speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.MASTER_NOTE)
                         }
                     )
                     DictationOutlinedTextField(
                         value = savePath,
                         onValueChange = { savePath = it },
-                        label = "Folder path",
+                        label = { Text("Folder path") },
                         onDictate = {
-                            dictationTarget = CaseDictationTarget.SAVE_PATH
-                            speechLauncher.launch(createSpeechIntent())
+                            speechLauncher.launch(createSpeechIntent(), CaseDictationTarget.SAVE_PATH)
                         }
                     )
                 }
