@@ -24,4 +24,14 @@ interface CaseDao {
 
     @Query("SELECT COUNT(*) FROM cases")
     suspend fun countCases(): Int
+
+    @Query("""
+        SELECT * FROM cases
+        WHERE caseCode LIKE '%' || :query || '%'
+           OR title LIKE '%' || :query || '%'
+           OR summary LIKE '%' || :query || '%'
+           OR primarySubject LIKE '%' || :query || '%'
+        ORDER BY updatedAt DESC
+    """)
+    fun searchCases(query: String): Flow<List<InvestigationCaseEntity>>
 }

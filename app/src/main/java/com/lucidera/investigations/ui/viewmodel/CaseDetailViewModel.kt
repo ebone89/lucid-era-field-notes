@@ -140,6 +140,10 @@ class CaseDetailViewModel(
         }
     }
 
+    suspend fun fetchArchiveUrl(sourceUrl: String): String? = runCatching {
+        repository.lookupArchive(sourceUrl).archiveUrl
+    }.getOrNull()
+
     fun clearUserMessage() {
         messageState.update { null }
     }

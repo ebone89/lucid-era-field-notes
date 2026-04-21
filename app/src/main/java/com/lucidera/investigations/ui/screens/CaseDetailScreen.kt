@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -48,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -79,6 +81,7 @@ import com.lucidera.investigations.ui.components.appendDictation
 import com.lucidera.investigations.ui.components.createSpeechIntent
 import com.lucidera.investigations.ui.components.rememberSpeechToTextLauncher
 import com.lucidera.investigations.ui.viewmodel.CaseDetailViewModel
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -98,6 +101,7 @@ fun CaseDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showLeadDialog by remember { mutableStateOf(false) }
     var showEntityDialog by remember { mutableStateOf(false) }
+    var leadStatusFilter by remember { mutableStateOf<LeadStatus?>(null) }
     var pendingExport by remember { mutableStateOf<ExportDocument?>(null) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -431,16 +435,34 @@ fun CaseDetailScreen(
             item {
                 Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-            if (state.leads.isEmpty()) {
+            item {
+                val allStatuses = listOf(null) + LeadStatus.entries
+                ActionChipRow {
+                    allStatuses.forEach { status ->
+                        val label = status?.name?.lowercase()?.replaceFirstChar(Char::uppercase) ?: "All"
+                        TextButton(onClick = { leadStatusFilter = status }) {
+                            Text(
+                                label,
+                                color = if (leadStatusFilter == status) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            val filteredLeads = if (leadStatusFilter == null) state.leads
+                                else state.leads.filter { it.status == leadStatusFilter }
+            if (filteredLeads.isEmpty()) {
                 item {
                     Text(
-                        "No sources logged yet.",
+                        if (leadStatusFilter == null) "No sources logged yet."
+                        else "No ${leadStatusFilter!!.name.lowercase()} sources.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            items(state.leads, key = { "lead_${it.id}" }) { lead ->
+            items(filteredLeads, key = { "lead_${it.id}" }) { lead ->
                 LeadCard(
                     lead = lead,
                     onVerify = { viewModel.updateLeadStatus(lead.id, LeadStatus.VERIFIED) },
@@ -514,6 +536,7 @@ fun CaseDetailScreen(
         AddLeadDialog(
             onDismiss = { showLeadDialog = false },
             title = "Add Source",
+            onFetchArchive = viewModel::fetchArchiveUrl,
             onSave = {
                 viewModel.addLead(it)
                 showLeadDialog = false
@@ -537,6 +560,7 @@ fun CaseDetailScreen(
         AddLeadDialog(
             initialLead = editingLead,
             title = "Edit Source",
+            onFetchArchive = viewModel::fetchArchiveUrl,
             onDismiss = { leadToEdit = null },
             onSave = {
                 viewModel.updateLead(editingLead, it)
@@ -869,6 +893,7 @@ private fun ActionChipRow(
 private fun AddLeadDialog(
     initialLead: LeadEntity? = null,
     title: String,
+    onFetchArchive: suspend (String) -> String?,
     onDismiss: () -> Unit,
     onSave: (LeadDraft) -> Unit
 ) {
@@ -877,6 +902,8 @@ private fun AddLeadDialog(
     var archiveUrl by remember(initialLead?.id) { mutableStateOf(initialLead?.archiveUrl.orEmpty()) }
     var tags by remember(initialLead?.id) { mutableStateOf(initialLead?.tags.orEmpty()) }
     var summary by remember(initialLead?.id) { mutableStateOf(initialLead?.summary.orEmpty()) }
+    var isFetchingArchive by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var dictationTarget by remember { mutableStateOf(DictationTarget.LEAD_SUMMARY) }
     val speechLauncher = rememberSpeechToTextLauncher(context) { result ->
@@ -936,15 +963,37 @@ private fun AddLeadDialog(
                         speechLauncher.launch(createSpeechIntent())
                     }
                 )
-                DictationOutlinedTextField(
-                    value = archiveUrl,
-                    onValueChange = { archiveUrl = it },
-                    label = "Archive URL",
-                    onDictate = {
-                        dictationTarget = DictationTarget.LEAD_ARCHIVE_URL
-                        speechLauncher.launch(createSpeechIntent())
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    DictationOutlinedTextField(
+                        value = archiveUrl,
+                        onValueChange = { archiveUrl = it },
+                        label = "Archive URL",
+                        modifier = Modifier.weight(1f),
+                        onDictate = {
+                            dictationTarget = DictationTarget.LEAD_ARCHIVE_URL
+                            speechLauncher.launch(createSpeechIntent())
+                        }
+                    )
+                    IconButton(
+                        onClick = {
+                            if (sourceUrl.isNotBlank() && !isFetchingArchive) {
+                                isFetchingArchive = true
+                                scope.launch {
+                                    val result = onFetchArchive(sourceUrl)
+                                    if (result != null) archiveUrl = result
+                                    else Toast.makeText(context, "No archive found.", Toast.LENGTH_SHORT).show()
+                                    isFetchingArchive = false
+                                }
+                            }
+                        },
+                        enabled = sourceUrl.isNotBlank() && !isFetchingArchive
+                    ) {
+                        Icon(Icons.Outlined.DownloadDone, contentDescription = "Fetch archive URL")
                     }
-                )
+                }
                 DictationOutlinedTextField(
                     value = summary,
                     onValueChange = { summary = it },

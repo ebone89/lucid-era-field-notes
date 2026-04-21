@@ -21,6 +21,8 @@ class InvestigationRepository(
 ) {
 
     val allCases: Flow<List<InvestigationCaseEntity>> = caseDao.observeAllCases()
+
+    fun searchCases(query: String): Flow<List<InvestigationCaseEntity>> = caseDao.searchCases(query)
     val openLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.OPEN)
     val verifiedLeadCount: Flow<Int> = leadDao.observeLeadCountByStatus(LeadStatus.VERIFIED)
     val entityCount: Flow<Int> = entityDao.observeEntityCount()

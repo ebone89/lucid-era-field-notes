@@ -5,22 +5,30 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
@@ -74,6 +82,7 @@ fun CasesScreen(
             CaseSortOrder.CODE -> state.cases.sortedBy { it.caseCode }
         }
     }
+    var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -95,62 +104,92 @@ fun CasesScreen(
         modifier = Modifier
             .fillMaxSize()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            LucidEraBrandHeader(
-                title = "Investigation Cases",
-                subtitle = "All open investigations. Tap a case to add sources, entities, or field photos.",
-                compact = true
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = { showDialog = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Add Case")
-                }
-                Button(
-                    onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Import Note")
-                }
+            item {
+                LucidEraBrandHeader(
+                    title = "Investigation Cases",
+                    subtitle = "All open investigations. Tap a case to add sources, entities, or field photos.",
+                    compact = true
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(
-                    CaseSortOrder.DATE_DESC to "Newest",
-                    CaseSortOrder.DATE_ASC to "Oldest",
-                    CaseSortOrder.CODE to "Code"
-                ).forEach { (order, label) ->
-                    TextButton(onClick = { sortOrder = order }) {
-                        Text(
-                            label,
-                            color = if (sortOrder == order) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { showDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Add Case")
+                    }
+                    Button(
+                        onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Import Note")
                     }
                 }
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.cases.isEmpty()) {
-                    item {
-                        Text(
-                            "No cases yet. Tap Add Case to start one.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = {
+                        searchQuery = it
+                        viewModel.setSearchQuery(it)
+                    },
+                    placeholder = { Text("Search cases…") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = {
+                                searchQuery = ""
+                                viewModel.setSearchQuery("")
+                            }) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(
+                        CaseSortOrder.DATE_DESC to "Newest",
+                        CaseSortOrder.DATE_ASC to "Oldest",
+                        CaseSortOrder.CODE to "Code"
+                    ).forEach { (order, label) ->
+                        TextButton(onClick = { sortOrder = order }) {
+                            Text(
+                                label,
+                                color = if (sortOrder == order) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-                items(sortedCases, key = { it.id }) { caseItem ->
-                    CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
+            }
+
+            if (sortedCases.isEmpty()) {
+                item {
+                    Text(
+                        if (searchQuery.isEmpty()) "No cases yet. Tap Add Case to start one."
+                        else "No cases match your search.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
                 }
+            }
+
+            items(sortedCases, key = { it.id }) { caseItem ->
+                CaseCard(caseItem = caseItem, onCaseSelected = onCaseSelected)
             }
         }
         SnackbarHost(
