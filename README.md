@@ -47,7 +47,7 @@ Open the project root in Android Studio. Gradle sync is required before first ru
 - `assembleDebug`
 - `assembleRelease`
 
-Minimum SDK: 26 (Android 8.0). Target SDK: 36.
+Minimum SDK: 26 (Android 8.0). Target SDK: 35.
 
 ## Export Format
 
@@ -66,6 +66,5 @@ Copy or move exported `.md` files there after each field session. Attachment fil
 ## Current Limits
 
 - No direct sync with the Windows vault.
-- No attachment delete or edit after initial capture.
 - No entity-to-entity relationship links.
-- No EXIF or GPS metadata extraction from photos.
+- Attachment files referenced in exported Markdown live on the phone; they are not copied to the vault automatically.

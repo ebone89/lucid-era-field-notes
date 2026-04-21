@@ -66,13 +66,16 @@ Navigation Compose handles the route graph. `AppContainer` wires dependencies ma
 
 ### 3.4 Outstanding Items
 
-| Item | Priority | Notes |
-|---|---|---|
-| AddEntityDialog: entityType and confidence are hardcoded | Medium | `entityType = EntityType.ORGANIZATION` and `confidence = ConfidenceLevel.PROBABLE` are hardcoded in the dialog. User cannot set PERSON, COMPANY, VEHICLE, or VERIFIED. Add type selector and confidence selector to AddEntityDialog. |
-| CasesViewModel.addCase: no error surface | Low | The only ViewModel that still has a bare `viewModelScope.launch { repository.addCase(draft) }` without `runCatching` or a `userMessage` field. In practice, `insertCase` with REPLACE strategy rarely throws. Add `runCatching` and a message state for consistency. |
-| P7: Encrypted storage | Low | SQLCipher. Significant implementation risk. Manual review required before implementation. |
-| LeadDraft.tags has no default value | Low | If a new call site creates a `LeadDraft` without specifying `tags`, it will fail to compile. Easy to catch at compile time. Add `tags: String = ""` default. |
-| EntityDraft.aliases has no default value | Low | Same issue. Add `aliases: String = ""` default. |
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| P7: Encrypted storage | Low | Deferred | SQLCipher. Significant implementation risk. Manual review required before implementation. |
+
+All other previously listed items have been resolved:
+
+- AddEntityDialog: full entity type and confidence selectors implemented using `EntityType.entries` and `ConfidenceLevel.entries` with visual highlighting.
+- CasesViewModel.addCase: error surface added (`runCatching`, `messageState`, `clearUserMessage`).
+- LeadDraft.tags: default value `""` added.
+- EntityDraft.aliases: default value `""` added.
 
 ---
 

@@ -84,7 +84,6 @@ Fix:
 `lintDebug` reported warnings, but none are current blockers:
 
 - dependency update notices
-- `kapt` could be migrated to `ksp` later for Room
 - logo bitmap should eventually be moved to a better density strategy or `drawable-nodpi`
 - backup rule XML files are present but unused
 
@@ -92,7 +91,6 @@ Fix:
 
 - The app still exports into the Obsidian workflow rather than syncing directly into the Windows vault.
 - Attachments are logged and stored locally, but they are referenced in exported Markdown rather than copied out as vault-ready image files.
-- There is still no attachment delete/edit flow.
 
 ## Final Assessment
 
