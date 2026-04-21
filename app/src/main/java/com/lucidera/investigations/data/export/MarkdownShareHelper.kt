@@ -1,7 +1,7 @@
 package com.lucidera.investigations.data.export
 
-import android.content.Context
 import android.content.ClipData
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
@@ -31,6 +31,7 @@ object MarkdownShareHelper {
             type = "text/markdown"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, fileName)
+            clipData = ClipData.newUri(context.contentResolver, fileName, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 

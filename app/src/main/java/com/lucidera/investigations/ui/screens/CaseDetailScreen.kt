@@ -440,7 +440,7 @@ fun CaseDetailScreen(
                     )
                 }
             }
-            items(state.leads, key = { it.id }) { lead ->
+            items(state.leads, key = { "lead_${it.id}" }) { lead ->
                 LeadCard(
                     lead = lead,
                     onVerify = { viewModel.updateLeadStatus(lead.id, LeadStatus.VERIFIED) },
@@ -461,7 +461,7 @@ fun CaseDetailScreen(
                     )
                 }
             }
-            items(state.entities, key = { it.id }) { entity ->
+            items(state.entities, key = { "entity_${it.id}" }) { entity ->
                 val entityMarkdown = remember(caseItem, entity) {
                     ObsidianMarkdownExporter.buildEntityMarkdown(entity, caseItem)
                 }
@@ -500,7 +500,7 @@ fun CaseDetailScreen(
                     )
                 }
             }
-            items(state.attachments, key = { it.id }) { attachment ->
+            items(state.attachments, key = { "attachment_${it.id}" }) { attachment ->
                 AttachmentCard(
                     attachment = attachment,
                     onEdit = { attachmentToEdit = attachment },
