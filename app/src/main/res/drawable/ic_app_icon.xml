@@ -1,49 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <corners android:radius="18dp" />
-            <solid android:color="#23484B" />
-        </shape>
-    </item>
-    <item
-        android:left="26dp"
-        android:top="18dp"
-        android:right="26dp"
-        android:bottom="18dp">
-        <layer-list>
-            <item>
-                <shape android:shape="rectangle">
-                    <corners android:radius="8dp" />
-                    <solid android:color="#F3F4F2" />
-                </shape>
-            </item>
-            <item android:right="38dp">
-                <shape android:shape="rectangle">
-                    <corners
-                        android:topLeftRadius="8dp"
-                        android:bottomLeftRadius="8dp" />
-                    <solid android:color="#37B33A" />
-                </shape>
-            </item>
-            <item android:left="24dp" android:top="16dp" android:right="12dp" android:bottom="48dp">
-                <shape android:shape="rectangle">
-                    <corners android:radius="2dp" />
-                    <solid android:color="#5D7478" />
-                </shape>
-            </item>
-            <item android:left="24dp" android:top="34dp" android:right="12dp" android:bottom="30dp">
-                <shape android:shape="rectangle">
-                    <corners android:radius="2dp" />
-                    <solid android:color="#5D7478" />
-                </shape>
-            </item>
-            <item android:left="24dp" android:top="52dp" android:right="24dp" android:bottom="12dp">
-                <shape android:shape="rectangle">
-                    <corners android:radius="2dp" />
-                    <solid android:color="#5D7478" />
-                </shape>
-            </item>
-        </layer-list>
-    </item>
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Dark teal background with rounded corners -->
+    <path
+        android:fillColor="#23484B"
+        android:pathData="M20,0 L88,0 Q108,0 108,20 L108,88 Q108,108 88,108 L20,108 Q0,108 0,88 L0,20 Q0,0 20,0 Z"/>
+
+    <!-- Lens fill: light teal -->
+    <path
+        android:fillColor="#C2DDE0"
+        android:pathData="M18,42 A26,26 0 1,0 70,42 A26,26 0 1,0 18,42 Z"/>
+
+    <!-- Lens ring: white -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.5"
+        android:pathData="M18,42 A26,26 0 1,0 70,42 A26,26 0 1,0 18,42 Z"/>
+
+    <!-- Handle: green, thick rounded line at 45 degrees -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#37B33A"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:pathData="M65,62 L88,85"/>
+
+</vector>
